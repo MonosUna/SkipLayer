@@ -1,0 +1,54 @@
+defaults:
+  - llm: qwen3
+  - aligner: mlp
+  - layer_skipper: uniform_layer_skipper
+  - iterating_strategy: layer_skip
+  - kv_cache_strategy: default
+  - loss: ce
+  - logger: cometml
+  - dataset: default
+  - dataloader: default
+  - collator: default
+  - metrics: layer_skip
+  - optimizer: adamw
+  - scheduler: linear_warmup
+  - _self_
+
+# Mode: if False, skip training and only run evaluation
+training_mode: True
+
+# Training configuration
+training:
+  batch_size: 1
+  learning_rate: 1e-4
+  weight_decay: 0.01
+  num_epochs: 5
+  warmup_steps: 100
+  max_grad_norm: 1.0
+  mixed_precision: true
+  mixed_precision_dtype: torch.bfloat16
+  checkpoint_save_epochs: 1
+  eval_steps: 1000
+  eval_steps_max_batches: 100
+  loss_logging_steps: 10
+  loss_logging_window: 50
+  seed: 42
+
+output_dir: ./outputs
+checkpoint_dir: ./checkpoints
+checkpoint_weights_only: true
+init_checkpoint_path: null
+log_checkpoint: false
+
+huggingface:
+  repo_id: null
+  token: ${oc.env:HF_TOKEN,""}
+  private: false
+
+device: cuda
+
+hydra:
+  run:
+    dir: ${output_dir}/${logger.run_name}
+  job:
+    chdir: true

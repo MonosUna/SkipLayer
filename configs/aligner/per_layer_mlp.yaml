@@ -1,0 +1,3 @@
+_target_: src.models.aligners.per_layer_mlp_aligner.PerLayerMLPAligner
+hidden_size: ${model.hidden_size}
+num_layers: ${model.num_hidden_layers}

@@ -1,0 +1,12 @@
+generate:
+  - _target_: src.metrics.skip_metrics.SkipMetrics
+    tokenizer:
+      _target_: transformers.AutoTokenizer.from_pretrained
+      pretrained_model_name_or_path: ${llm.model_loading.pretrained_model_name_or_path}
+    max_new_tokens: 64
+  - _target_: src.metrics.generations.Generations
+    tokenizer:
+      _target_: transformers.AutoTokenizer.from_pretrained
+      pretrained_model_name_or_path: ${llm.model_loading.pretrained_model_name_or_path}
+    max_new_tokens: 256
+    do_sample: false

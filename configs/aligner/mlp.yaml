@@ -1,0 +1,2 @@
+_target_: src.models.aligners.mlp_aligner.MLPAligner
+hidden_size: ${model.hidden_size}

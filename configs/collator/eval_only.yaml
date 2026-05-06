@@ -1,0 +1,2 @@
+generate:
+  _target_: src.collators.generation_collator.GenerationCollator

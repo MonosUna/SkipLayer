@@ -1,0 +1,15 @@
+train:
+  _target_: src.datasets.alpaca_dataset.AlpacaDataset
+  dataset_name: tatsu-lab/alpaca
+  split: train
+test:
+  _target_: src.datasets.wikitext_dataset.WikitextDataset
+  dataset_name: Salesforce/wikitext
+  config_name: wikitext-2-raw-v1
+  split: test
+generate:
+  _target_: src.datasets.trivia_qa_dataset.TriviaQADataset
+  dataset_name: mandarjoshi/trivia_qa
+  config_name: rc
+  split: test
+  limit: 5

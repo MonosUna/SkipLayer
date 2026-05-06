@@ -1,0 +1,20 @@
+# Python
+__pycache__
+*.egg-info/
+
+# Models checkpoints and datasets
+/data/
+/models/
+/checkpoints/
+
+# Launch script
+launch.sh
+
+# Hydra
+/outputs
+
+# Vscode
+.vscode
+
+# Venv
+.venv

@@ -1,0 +1,5 @@
+_target_: src.models.layer_skippers.uniform_layer_skipper.UniformLayerSkipper
+num_layers: ${model.num_hidden_layers}
+p: 0.5
+skip_percentile_ranges:
+  - [0.5, 1.0]
