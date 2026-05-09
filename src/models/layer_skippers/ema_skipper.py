@@ -75,6 +75,10 @@ class EmaSkipper(nn.Module):
         self.p_skip: float = p_init
         self.step_counter: int = 0
         self.skip_history: deque[float] = deque(maxlen=self.history_window)
+        # Last importance scores I_l = ||Δ_l|| / ||h_l|| computed in
+        # ``record_prefill``; kept around so external metrics can read
+        # them without recomputing the prefill forward.
+        self.last_importance: dict[int, float] = {}
 
     # ------------------------------------------------------------------ utils
 
@@ -97,6 +101,7 @@ class EmaSkipper(nn.Module):
         self.p_skip = self.p_init
         self.step_counter = 0
         self.skip_history = deque(maxlen=self.history_window)
+        self.last_importance = {}
 
     def record_prefill(
         self,
@@ -116,18 +121,24 @@ class EmaSkipper(nn.Module):
             # relevant for the very next generation step).
             self.ema[i] = delta[..., -1:, :].detach().clone()
 
-            if self.is_protected(i):
-                continue
             # Per-position L2 norm ratio, then average over batch & seq.
+            # Computed for *all* layers (including protected) so external
+            # metrics can inspect the full delta distribution; only
+            # eligible layers contribute to candidate selection.
             d_norm = delta.float().norm(dim=-1)
             h_norm = h_in.float().norm(dim=-1).clamp_min(1e-6)
             importance[i] = (d_norm / h_norm).mean().item()
 
+        self.last_importance = dict(importance)
+
+        eligible_importance = {
+            i: v for i, v in importance.items() if not self.is_protected(i)
+        }
         k = self.num_candidates()
-        if k == 0 or not importance:
+        if k == 0 or not eligible_importance:
             self.candidates = set()
         else:
-            sorted_layers = sorted(importance.items(), key=lambda kv: kv[1])
+            sorted_layers = sorted(eligible_importance.items(), key=lambda kv: kv[1])
             self.candidates = {layer for layer, _ in sorted_layers[:k]}
 
     # --------------------------------------------------------------- skipping

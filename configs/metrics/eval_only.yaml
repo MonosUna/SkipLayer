@@ -1,4 +1,8 @@
 generate:
+  - _target_: src.metrics.ema_candidate_stats.EmaCandidateStats
+    tokenizer:
+      _target_: transformers.AutoTokenizer.from_pretrained
+      pretrained_model_name_or_path: ${llm.model_loading.pretrained_model_name_or_path}
   - _target_: src.metrics.skip_metrics.SkipMetrics
     tokenizer:
       _target_: transformers.AutoTokenizer.from_pretrained
