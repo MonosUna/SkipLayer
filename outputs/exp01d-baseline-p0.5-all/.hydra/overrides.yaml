@@ -1,0 +1,6 @@
+- layer_skipper.p=0.5
+- layer_skipper.skip_percentile_ranges=[[0.0, 1.0]]
+- logger.run_name=exp01d-baseline-p0.5-all
+- logger=cometml_jsonl
+- logger.workspace=serega-pirat
+- dataset.generate.limit=50

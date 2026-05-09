@@ -1,0 +1,5 @@
+- layer_skipper.skip_ratio=0.2
+- logger.run_name=exp04a-ema-ratio0.2
+- logger=cometml_jsonl
+- logger.workspace=serega-pirat
+- dataset.generate.limit=50

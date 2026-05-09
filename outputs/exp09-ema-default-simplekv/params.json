@@ -1,0 +1,152 @@
+{
+  "llm": {
+    "_target_": "src.models.llms.qwen3.CustomQwen3ForCausalLM",
+    "model_loading": {
+      "pretrained_model_name_or_path": "Qwen/Qwen3-4B-Instruct-2507",
+      "trust_remote_code": true,
+      "dtype": "torch.bfloat16",
+      "device_map": "auto"
+    }
+  },
+  "aligner": {
+    "_target_": "src.models.aligners.base_aligner.BaseAligner"
+  },
+  "layer_skipper": {
+    "_target_": "src.models.layer_skippers.ema_skipper.EmaSkipper",
+    "num_layers": 36,
+    "protected_first": 3,
+    "protected_last": 2,
+    "skip_ratio": 0.3,
+    "beta": 0.9,
+    "refresh_interval": 8,
+    "p_init": 0.5,
+    "p_min": 0.1,
+    "p_max": 0.9,
+    "target_ratio": 0.4,
+    "adaptation_rate": 0.03,
+    "history_window": 16
+  },
+  "iterating_strategy": {
+    "_target_": "src.models.iterating_strategies.ema_layer_skip.EmaLayerSkipIterationStrategy",
+    "kv_cache_strategy": {
+      "_target_": "src.models.kv_cache_strategies.simple_propagate.SimpleKVCachePropagate"
+    }
+  },
+  "kv_cache_strategy": {
+    "_target_": "src.models.kv_cache_strategies.simple_propagate.SimpleKVCachePropagate"
+  },
+  "loss": {
+    "_target_": "src.losses.ce_loss.CELoss"
+  },
+  "logger": {
+    "_target_": "src.loggers.jsonl_logger.MultiLogger",
+    "workspace": "serega-pirat",
+    "run_name": "exp09-ema-default-simplekv",
+    "loggers": [
+      {
+        "_target_": "src.loggers.logger.CometMLLogger",
+        "api_key": "Ln8HzeS5sByuvTqyCYi9khkaO",
+        "project_name": "skiplayer-diploma",
+        "workspace": "serega-pirat",
+        "run_name": "exp09-ema-default-simplekv",
+        "auto_metric_logging": false,
+        "auto_param_logging": false
+      },
+      {
+        "_target_": "src.loggers.jsonl_logger.JsonlFileLogger",
+        "log_dir": null,
+        "run_name": "exp09-ema-default-simplekv"
+      }
+    ]
+  },
+  "dataset": {
+    "generate": {
+      "_target_": "src.datasets.trivia_qa_dataset.TriviaQADataset",
+      "dataset_name": "mandarjoshi/trivia_qa",
+      "config_name": "rc",
+      "split": "test",
+      "limit": 50
+    }
+  },
+  "dataloader": {
+    "generate": {
+      "_target_": "torch.utils.data.DataLoader",
+      "_partial_": true,
+      "batch_size": 1,
+      "shuffle": false,
+      "num_workers": 0,
+      "pin_memory": true,
+      "drop_last": false
+    }
+  },
+  "collator": {
+    "generate": {
+      "_target_": "src.collators.generation_collator.GenerationCollator"
+    }
+  },
+  "metrics": {
+    "generate": [
+      {
+        "_target_": "src.metrics.ema_candidate_stats.EmaCandidateStats",
+        "tokenizer": {
+          "_target_": "transformers.AutoTokenizer.from_pretrained",
+          "pretrained_model_name_or_path": "Qwen/Qwen3-4B-Instruct-2507"
+        }
+      },
+      {
+        "_target_": "src.metrics.skip_metrics.SkipMetrics",
+        "tokenizer": {
+          "_target_": "transformers.AutoTokenizer.from_pretrained",
+          "pretrained_model_name_or_path": "Qwen/Qwen3-4B-Instruct-2507"
+        },
+        "max_new_tokens": 64
+      },
+      {
+        "_target_": "src.metrics.generations.Generations",
+        "tokenizer": {
+          "_target_": "transformers.AutoTokenizer.from_pretrained",
+          "pretrained_model_name_or_path": "Qwen/Qwen3-4B-Instruct-2507"
+        },
+        "max_new_tokens": 256,
+        "do_sample": false
+      }
+    ]
+  },
+  "training_mode": false,
+  "training": {
+    "batch_size": 1,
+    "learning_rate": 0.0001,
+    "weight_decay": 0.01,
+    "num_epochs": 1,
+    "warmup_steps": 0,
+    "max_grad_norm": 1.0,
+    "mixed_precision": true,
+    "mixed_precision_dtype": "torch.bfloat16",
+    "checkpoint_save_epochs": 1,
+    "eval_steps": 1000,
+    "eval_steps_max_batches": 100,
+    "loss_logging_steps": 10,
+    "loss_logging_window": 50,
+    "seed": 42
+  },
+  "output_dir": "./outputs",
+  "checkpoint_dir": "./checkpoints",
+  "checkpoint_weights_only": true,
+  "init_checkpoint_path": null,
+  "log_checkpoint": false,
+  "huggingface": {
+    "repo_id": null,
+    "token": "",
+    "private": false
+  },
+  "device": "cuda",
+  "model": {
+    "num_hidden_layers": 36,
+    "hidden_size": 2560,
+    "num_attention_heads": 32,
+    "num_key_value_heads": 8,
+    "head_dim": 128,
+    "kv_hidden_size": 1024,
+    "intermediate_size": 9728
+  }
+}

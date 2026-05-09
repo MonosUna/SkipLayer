@@ -1,0 +1,100 @@
+llm:
+  _target_: src.models.llms.qwen3.CustomQwen3ForCausalLM
+  model_loading:
+    pretrained_model_name_or_path: Qwen/Qwen3-4B-Instruct-2507
+    trust_remote_code: true
+    dtype: torch.bfloat16
+    device_map: auto
+aligner:
+  _target_: src.models.aligners.base_aligner.BaseAligner
+layer_skipper:
+  _target_: src.models.layer_skippers.uniform_layer_skipper.UniformLayerSkipper
+  num_layers: ${model.num_hidden_layers}
+  p: 0.5
+  skip_percentile_ranges:
+  - - 0.5
+    - 1.0
+iterating_strategy:
+  _target_: src.models.iterating_strategies.layer_skip.LayerSkipIterationStrategy
+  kv_cache_strategy: ${kv_cache_strategy}
+kv_cache_strategy:
+  _target_: src.models.kv_cache_strategies.simple_propagate.SimpleKVCachePropagate
+loss:
+  _target_: src.losses.ce_loss.CELoss
+logger:
+  _target_: src.loggers.jsonl_logger.MultiLogger
+  workspace: serega-pirat
+  run_name: exp01a-baseline-p0.5-half
+  loggers:
+  - _target_: src.loggers.logger.CometMLLogger
+    api_key: ${oc.env:COMET_API_KEY}
+    project_name: skiplayer-diploma
+    workspace: ${logger.workspace}
+    run_name: ${logger.run_name}
+    auto_metric_logging: false
+    auto_param_logging: false
+  - _target_: src.loggers.jsonl_logger.JsonlFileLogger
+    log_dir: null
+    run_name: ${logger.run_name}
+dataset:
+  generate:
+    _target_: src.datasets.trivia_qa_dataset.TriviaQADataset
+    dataset_name: mandarjoshi/trivia_qa
+    config_name: rc
+    split: test
+    limit: 50
+dataloader:
+  generate:
+    _target_: torch.utils.data.DataLoader
+    _partial_: true
+    batch_size: 1
+    shuffle: false
+    num_workers: 0
+    pin_memory: true
+    drop_last: false
+collator:
+  generate:
+    _target_: src.collators.generation_collator.GenerationCollator
+metrics:
+  generate:
+  - _target_: src.metrics.ema_candidate_stats.EmaCandidateStats
+    tokenizer:
+      _target_: transformers.AutoTokenizer.from_pretrained
+      pretrained_model_name_or_path: ${llm.model_loading.pretrained_model_name_or_path}
+  - _target_: src.metrics.skip_metrics.SkipMetrics
+    tokenizer:
+      _target_: transformers.AutoTokenizer.from_pretrained
+      pretrained_model_name_or_path: ${llm.model_loading.pretrained_model_name_or_path}
+    max_new_tokens: 64
+  - _target_: src.metrics.generations.Generations
+    tokenizer:
+      _target_: transformers.AutoTokenizer.from_pretrained
+      pretrained_model_name_or_path: ${llm.model_loading.pretrained_model_name_or_path}
+    max_new_tokens: 256
+    do_sample: false
+training_mode: false
+training:
+  batch_size: 1
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  num_epochs: 1
+  warmup_steps: 0
+  max_grad_norm: 1.0
+  mixed_precision: true
+  mixed_precision_dtype: torch.bfloat16
+  checkpoint_save_epochs: 1
+  eval_steps: 1000
+  eval_steps_max_batches: 100
+  loss_logging_steps: 10
+  loss_logging_window: 50
+  seed: 42
+output_dir: ./outputs
+checkpoint_dir: ./checkpoints
+checkpoint_weights_only: true
+init_checkpoint_path: null
+log_checkpoint: false
+huggingface:
+  repo_id: null
+  token: ${oc.env:HF_TOKEN,""}
+  private: false
+device: cuda

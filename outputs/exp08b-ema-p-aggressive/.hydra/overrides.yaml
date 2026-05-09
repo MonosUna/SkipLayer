@@ -1,0 +1,8 @@
+- layer_skipper.p_init=0.8
+- layer_skipper.p_max=0.95
+- layer_skipper.target_ratio=0.7
+- layer_skipper.adaptation_rate=0.05
+- logger.run_name=exp08b-ema-p-aggressive
+- logger=cometml_jsonl
+- logger.workspace=serega-pirat
+- dataset.generate.limit=50

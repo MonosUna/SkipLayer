@@ -1,0 +1,5 @@
+- layer_skipper.beta=0.99
+- logger.run_name=exp05b-ema-beta0.99
+- logger=cometml_jsonl
+- logger.workspace=serega-pirat
+- dataset.generate.limit=50

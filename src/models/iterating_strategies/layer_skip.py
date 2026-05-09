@@ -68,8 +68,12 @@ class LayerSkipIterationStrategy:
                         past_key_values,
                         last_calculated_layer,
                         cache_kwargs,
-                        hidden_states=raw_hidden_states,
+                        decoder_layer=decoder_layer,
+                        hidden_states=aligned_hidden_states,
                         aligned_hidden_states=aligned_hidden_states,
+                        raw_hidden_states=raw_hidden_states,
+                        position_embeddings=position_embeddings, 
+                        layer_idx=i,
                         start=i,
                         until=i + 1,
                     )

@@ -24,15 +24,14 @@
 
 set -euo pipefail
 
-COMET_WS="${COMET_WS:-your_workspace}"
-EVAL_LIMIT="${EVAL_LIMIT:-200}"
+EVAL_LIMIT="${EVAL_LIMIT:-50}"
 
 # Общие override'ы, которые применяются ко всем запускам:
 #   * локальный JSONL-логгер + CometML;
 #   * единый размер выборки для оценочных метрик.
 COMMON=(
   "logger=cometml_jsonl"
-  "logger.workspace=${COMET_WS}"
+  "logger.workspace=serega-pirat"
   "dataset.generate.limit=${EVAL_LIMIT}"
 )
 
@@ -104,7 +103,7 @@ exp_baseline_p05_middle() {
 exp_baseline_p05_projkv() {
   python -m src.scripts.train --config-name=baseline \
     kv_cache_strategy=project_kv \
-    "logger.run_name=exp02-baseline-p0.5-projkv" \
+    "logger.run_name=exp02-baseline-p0.5-projkv-" \
     "${COMMON[@]}"
 }
 
@@ -244,12 +243,12 @@ exp_ema_default_xl_eval() {
 # Раннер
 # =============================================================================
 ALL_EXPS=(
-  exp_full_model
-  exp_baseline_p05_half
-  exp_baseline_p03_half
-  exp_baseline_p07_half
-  exp_baseline_p05_all
-  exp_baseline_p05_middle
+  # exp_full_model
+  # exp_baseline_p05_half
+  # exp_baseline_p03_half
+  # exp_baseline_p07_half
+  # exp_baseline_p05_all
+  # exp_baseline_p05_middle
   exp_baseline_p05_projkv
   exp_ema_default
   exp_ema_ratio_0_2
