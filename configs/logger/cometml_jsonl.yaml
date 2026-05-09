@@ -1,0 +1,15 @@
+_target_: src.loggers.jsonl_logger.MultiLogger
+# Default workspace+run_name so the loggers below can interpolate.
+workspace: ???
+run_name: ${now:%Y-%m-%d_%H-%M-%S}
+loggers:
+  - _target_: src.loggers.logger.CometMLLogger
+    api_key: ${oc.env:COMET_API_KEY}
+    project_name: skip-layer-llm
+    workspace: ${logger.workspace}
+    run_name: ${logger.run_name}
+    auto_metric_logging: false
+    auto_param_logging: false
+  - _target_: src.loggers.jsonl_logger.JsonlFileLogger
+    log_dir: null
+    run_name: ${logger.run_name}
