@@ -78,6 +78,28 @@ class EmaLayerSkipIterationStrategy:
         if llm.layer_skipper is None:
             raise ValueError("EmaLayerSkipIterationStrategy requires a layer_skipper")
 
+        # The skipper may not implement all EMA-method hooks (e.g. when
+        # SkipMetrics temporarily swaps it with BaseLayerSkipper to compute
+        # the full-model reference). Resolve the hooks defensively here.
+        skipper = llm.layer_skipper
+        has_ema_api = (
+            hasattr(skipper, "reset")
+            and hasattr(skipper, "record_prefill")
+            and hasattr(skipper, "update_ema")
+            and hasattr(skipper, "compensate")
+            and hasattr(skipper, "end_step")
+        )
+
+        def _should_skip(i: int) -> bool:
+            fn = getattr(skipper, "should_skip", None)
+            if fn is None:
+                return False
+            try:
+                return bool(fn(i))
+            except TypeError:
+                # Fallback for skippers whose ``should_skip`` expects (x, i).
+                return bool(fn(hidden_states, i))
+
         is_single_token = hidden_states.size(1) == 1
         is_inference = not llm.training
 
@@ -85,9 +107,9 @@ class EmaLayerSkipIterationStrategy:
         # we additionally record per-layer (h_in, h_out) and hand them to
         # the skipper so it can pick candidates and seed EMA buffers.
         if not (is_inference and is_single_token):
-            record_io = is_inference and not is_single_token
+            record_io = is_inference and not is_single_token and has_ema_api
             if record_io:
-                llm.layer_skipper.reset()
+                skipper.reset()
             hidden_states, layer_io = self._full_forward(
                 layers,
                 hidden_states,
@@ -101,7 +123,7 @@ class EmaLayerSkipIterationStrategy:
                 **kwargs,
             )
             if record_io:
-                llm.layer_skipper.record_prefill(layer_io)
+                skipper.record_prefill(layer_io)
             skip_vector = [0] * len(layers)
             skip_tensor = torch.tensor(skip_vector, device=hidden_states.device)
             return {
@@ -111,7 +133,6 @@ class EmaLayerSkipIterationStrategy:
             }
 
         # Single-token inference path.
-        skipper = llm.layer_skipper
         skip_vector: list[int] = []
         last_calculated_layer = None
         cos, sin = position_embeddings
@@ -124,8 +145,8 @@ class EmaLayerSkipIterationStrategy:
             # ``ProjectKVCacheStrategy`` projects from the layer itself
             # so the guard does not strictly apply, but skipping the very
             # first layer remains questionable).
-            can_skip = last_calculated_layer is not None
-            is_skipping = can_skip and skipper.should_skip(i)
+            can_skip = last_calculated_layer is not None and has_ema_api
+            is_skipping = can_skip and _should_skip(i)
             skip_vector.append(int(is_skipping))
 
             h_in = hidden_states
@@ -158,10 +179,12 @@ class EmaLayerSkipIterationStrategy:
                     position_embeddings=position_embeddings,
                     **kwargs,
                 )
-                skipper.update_ema(i, h_in, hidden_states)
+                if has_ema_api:
+                    skipper.update_ema(i, h_in, hidden_states)
                 last_calculated_layer = i
 
-        skipper.end_step(num_skipped)
+        if has_ema_api:
+            skipper.end_step(num_skipped)
         skip_tensor = torch.tensor(skip_vector, device=hidden_states.device)
         return {
             "hidden_states": hidden_states,
