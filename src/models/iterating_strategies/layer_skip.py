@@ -38,18 +38,36 @@ class LayerSkipIterationStrategy:
             raise ValueError("LayerSkipIterationStrategy requires a layer_skipper to be defined")
 
         last_calculated_layer = None
-        skip_vector = []
+        skip_vector: list[int] = []
 
-        skip_layer = None
+        # Determine, in advance, which layers will be skipped. During training
+        # we must guarantee that at least one layer with a trainable aligner is
+        # skipped, otherwise the loss would not require grad (the base LLM is
+        # frozen, and the aligner is a no-op for layer indices below
+        # ``start_layer``). Without this safeguard ``loss.backward()`` raises
+        # "element 0 of tensors does not require grad and does not have a
+        # grad_fn" whenever the random sampler picks no skip in the trainable
+        # range.
         if llm.training:
-            skip_layer = torch.randint(0, len(layers), (1,)).item()
+            decisions: list[bool] = [
+                bool(llm.layer_skipper.should_skip(hidden_states, i))
+                for i in range(len(layers))
+            ]
+            aligner_start = int(getattr(llm.aligner, "start_layer", 0))
+            trainable_indices = [
+                i for i in range(aligner_start, len(layers))
+                if any(p.requires_grad for p in llm.aligner.parameters())
+            ]
+            if trainable_indices and not any(decisions[i] for i in trainable_indices):
+                forced = int(torch.randint(0, len(trainable_indices), (1,)).item())
+                decisions[trainable_indices[forced]] = True
+        else:
+            decisions = None
 
         for i, decoder_layer in enumerate(layers):
             if llm.training:
-                is_skipping = i == skip_layer
+                is_skipping = decisions[i]
             else:
-                # KV propagation requires single-token decoding *and* at least
-                # one previous layer that produced cache entries to copy from.
                 is_skipping = (
                     hidden_states.size(1) == 1
                     and last_calculated_layer is not None

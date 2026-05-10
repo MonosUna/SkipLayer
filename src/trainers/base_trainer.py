@@ -113,6 +113,19 @@ class BaseTrainer:
         else:
             outputs = self.model.custom_forward(batch)
             loss = self._compute_loss(outputs)
+
+        # Defensive: if no trainable parameter participated in this forward
+        # (e.g. all skipped layers landed in a no-op range of the aligner),
+        # the loss has no grad_fn. Skip the optimizer step rather than crash.
+        if not loss.requires_grad:
+            warnings.warn(
+                "Skipping train step: loss does not require grad "
+                "(no trainable parameter participated in the forward pass).",
+                stacklevel=2,
+            )
+            self.global_step += 1
+            return float(loss.item())
+
         loss.backward()
 
         if self.cfg.training.max_grad_norm > 0:
