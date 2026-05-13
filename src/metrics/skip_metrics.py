@@ -143,9 +143,11 @@ class SkipMetrics(BaseMetric):
         match_count_by_k: dict[int, int] = defaultdict(int)
         total_count_by_k: dict[int, int] = defaultdict(int)
         full_token_logprob_sum_by_k: dict[int, float] = defaultdict(float)
+        full_token_prob_sum_by_k: dict[int, float] = defaultdict(float)
 
         total_match = 0
         total_count = 0
+        total_full_token_prob = 0.0
 
         last_skip_html: str | None = None
 
@@ -201,9 +203,13 @@ class SkipMetrics(BaseMetric):
 
                         # Probability the skip-model assigns to the full
                         # model's prediction (calibration signal).
-                        full_token_logprob_sum_by_k[k] += float(
+                        full_token_logprob = float(
                             skip_log_probs.gather(dim=-1, index=full_token).item()
                         )
+                        full_token_prob = float(torch.exp(torch.tensor(full_token_logprob, dtype=torch.float32)).item())
+                        full_token_logprob_sum_by_k[k] += full_token_logprob
+                        full_token_prob_sum_by_k[k] += full_token_prob
+                        total_full_token_prob += full_token_prob
 
                         skip_token_ids.append(skip_token.item())
                         full_token_ids.append(full_token.item())
@@ -242,10 +248,14 @@ class SkipMetrics(BaseMetric):
             result[f"avg_full_token_logprob/skip_{k:0{width}d}"] = (
                 full_token_logprob_sum_by_k[k] / total
             )
+            result[f"avg_full_token_prob/skip_{k:0{width}d}"] = (
+                full_token_prob_sum_by_k[k] / total
+            )
 
         if total_count > 0:
             result["accuracy/overall"] = total_match / total_count
             result["count/overall"] = float(total_count)
+            result["avg_full_token_prob/overall"] = total_full_token_prob / total_count
 
         if last_skip_html is not None:
             result["html/skip_table"] = last_skip_html

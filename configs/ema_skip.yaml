@@ -10,7 +10,7 @@ defaults:
   - aligner: default                    # identity; compensation is in the strategy
   - layer_skipper: ema_skipper
   - iterating_strategy: ema_layer_skip
-  - kv_cache_strategy: project_kv
+  - kv_cache_strategy: default
   - loss: ce
   - logger: cometml
   - dataset: eval_only

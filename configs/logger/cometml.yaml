@@ -1,6 +1,6 @@
 _target_: src.loggers.logger.CometMLLogger
 api_key: ${oc.env:COMET_API_KEY}
-project_name: skiplayer-diploma
+project_name: skiplayer-diploma-new
 workspace: serega-pirat
 run_name: ${now:%Y-%m-%d_%H-%M-%S}
 auto_metric_logging: false

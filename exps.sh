@@ -6,17 +6,18 @@
 #   bash exps.sh <имя_эксперимента>
 # либо `bash exps.sh all`, чтобы прогнать все по очереди.
 #
-# Требования окружения:
-#   COMET_API_KEY  — ключ для CometML-логгера
-#   COMET_WS       — workspace в CometML (по умолчанию ниже)
-#   EVAL_LIMIT     — размер выборки для метрик (по умолчанию 200)
+# Матрица 3×3:
+#   методы:  full / baseline / ema
+#   режимы:  default / large-max-tokens / large-seq-len
 #
-# Все эксперименты — eval-only (training_mode=False).
-# Для каждого запуска метрики дублируются в локальные файлы:
-#   outputs/<run_name>/metrics.jsonl       — все scalar-метрики
-#   outputs/<run_name>/metrics_summary.json — последние значения
-#   outputs/<run_name>/params.json          — resolved Hydra-конфиг
-#   outputs/<run_name>/html/                — HTML-дашборды
+# Метрики (см. configs/metrics/eval_only.yaml + src/metrics/skip_metrics.py):
+#   accuracy/overall и accuracy/skip_{k}           — попадание argmax skip-модели
+#                                                    в argmax полной модели;
+#   avg_full_token_prob/overall и .../skip_{k}     — средняя вероятность,
+#                                                    которую skip-модель ставит
+#                                                    на «таргетный» токен полной
+#                                                    модели (новая метрика);
+#   avg_full_token_logprob/skip_{k}                — тот же сигнал в log-space.
 #
 # После всех запусков можно агрегировать командой:
 #   python scripts/aggregate_results.py outputs --csv outputs/summary.csv
@@ -24,106 +25,136 @@
 
 set -euo pipefail
 
+# Размер выборки для метрик. Длинные контексты тяжёлые, поэтому отдельный
+# дефолт для seq-len-режима (можно перекрыть через env).
 EVAL_LIMIT="${EVAL_LIMIT:-50}"
+EVAL_LIMIT_LONG="${EVAL_LIMIT_LONG:-20}"
 
-# Общие override'ы, которые применяются ко всем запускам:
-#   * локальный JSONL-логгер + CometML;
-#   * единый размер выборки для оценочных метрик.
+# max_new_tokens для двух точек: default и large.
+SKIP_MAX_TOKENS_DEFAULT="${SKIP_MAX_TOKENS_DEFAULT:-64}"
+SKIP_MAX_TOKENS_LARGE="${SKIP_MAX_TOKENS_LARGE:-512}"
+
+# Общие override'ы для всех запусков.
 COMMON=(
   "logger=cometml_jsonl"
   "logger.workspace=serega-pirat"
-  "dataset.generate.limit=${EVAL_LIMIT}"
 )
 
 # -----------------------------------------------------------------------------
-# 0. Reference / sanity-check: «полная модель» — все слои честно считаются.
-#    Достигается через baseline + p=0.0 (никаких пропусков).
-#    Полезно как верхняя граница качества и проверка пайплайна.
+# Режимные override'ы — три точки на оси «контекст / длина генерации».
 # -----------------------------------------------------------------------------
-exp_full_model() {
+
+# Режим 1: default — TriviaQA (короткие промпты), max_new_tokens=64.
+mode_default() {
+  echo \
+    "dataset.generate.limit=${EVAL_LIMIT}" \
+    "metrics.generate.1.max_new_tokens=${SKIP_MAX_TOKENS_DEFAULT}"
+}
+
+# Режим 2: large-max-tokens — TriviaQA, но SkipMetrics генерит длинные
+# последовательности (нагружает компенсацию и стабильность EMA на длинном горизонте).
+mode_large_max_tokens() {
+  echo \
+    "dataset.generate.limit=${EVAL_LIMIT}" \
+    "metrics.generate.1.max_new_tokens=${SKIP_MAX_TOKENS_LARGE}"
+}
+
+# Режим 3: large-seq-len — переключаемся на Wikitext (длинные тексты-промпты),
+# что увеличивает prefill и нагрузку на attention. Длина генерации обычная.
+mode_large_seq_len() {
+  echo \
+    "dataset=eval_long" \
+    "dataset.generate.limit=${EVAL_LIMIT_LONG}" \
+    "metrics.generate.1.max_new_tokens=${SKIP_MAX_TOKENS_DEFAULT}"
+}
+
+# -----------------------------------------------------------------------------
+# Метод 1: FULL — все слои честно считаются (baseline с p=0.0).
+# -----------------------------------------------------------------------------
+exp_full_default() {
   python -m src.scripts.train --config-name=baseline \
     layer_skipper.p=0.0 \
-    "logger.run_name=exp00-full-model" \
+    "logger.run_name=exp-full-default" \
+    $(mode_default) \
+    "${COMMON[@]}"
+}
+
+exp_full_large_max_tokens() {
+  python -m src.scripts.train --config-name=baseline \
+    layer_skipper.p=0.0 \
+    "logger.run_name=exp-full-large-max-tokens" \
+    $(mode_large_max_tokens) \
+    "${COMMON[@]}"
+}
+
+exp_full_large_seq_len() {
+  python -m src.scripts.train --config-name=baseline \
+    layer_skipper.p=0.0 \
+    "logger.run_name=exp-full-large-seq-len" \
+    $(mode_large_seq_len) \
     "${COMMON[@]}"
 }
 
 # -----------------------------------------------------------------------------
-# 1. БЕЙЗЛАЙН: random-skip без какой-либо компенсации скрытых состояний.
-#    Aligner — identity, KV для пропущенного слоя — копируется из
-#    последнего вычисленного (SimpleKVCachePropagate).
+# Метод 2: BASELINE — random-skip без EMA-компенсации (p=0.5, half-net).
+#          Aligner = identity, KV = SimpleKVCachePropagate (defaults baseline.yaml).
 # -----------------------------------------------------------------------------
-
-# 1a. Скип во второй половине сети с p=0.5 (дефолт baseline.yaml).
-exp_baseline_p05_half() {
+exp_baseline_default() {
   python -m src.scripts.train --config-name=baseline \
-    "logger.run_name=exp01a-baseline-p0.5-half" \
+    "logger.run_name=exp-baseline-default" \
+    $(mode_default) \
     "${COMMON[@]}"
 }
 
-# 1b. Более «лёгкий» скип — p=0.3 во второй половине.
-exp_baseline_p03_half() {
+exp_baseline_large_max_tokens() {
   python -m src.scripts.train --config-name=baseline \
-    layer_skipper.p=0.3 \
-    "logger.run_name=exp01b-baseline-p0.3-half" \
+    "logger.run_name=exp-baseline-large-max-tokens" \
+    $(mode_large_max_tokens) \
     "${COMMON[@]}"
 }
 
-# 1c. Агрессивный скип — p=0.7 во второй половине.
-exp_baseline_p07_half() {
+exp_baseline_large_seq_len() {
   python -m src.scripts.train --config-name=baseline \
-    layer_skipper.p=0.7 \
-    "logger.run_name=exp01c-baseline-p0.7-half" \
-    "${COMMON[@]}"
-}
-
-# 1d. Скип равномерно по всей сети (включая первые слои).
-#     Должен ощутимо просесть — нужен как «нижняя граница».
-exp_baseline_p05_all() {
-  python -m src.scripts.train --config-name=baseline \
-    layer_skipper.p=0.5 \
-    "layer_skipper.skip_percentile_ranges=[[0.0, 1.0]]" \
-    "logger.run_name=exp01d-baseline-p0.5-all" \
-    "${COMMON[@]}"
-}
-
-# 1e. Скип только в средних слоях (≈ 25%–75%), p=0.5.
-exp_baseline_p05_middle() {
-  python -m src.scripts.train --config-name=baseline \
-    layer_skipper.p=0.5 \
-    "layer_skipper.skip_percentile_ranges=[[0.25, 0.75]]" \
-    "logger.run_name=exp01e-baseline-p0.5-middle" \
+    "logger.run_name=exp-baseline-large-seq-len" \
+    $(mode_large_seq_len) \
     "${COMMON[@]}"
 }
 
 # -----------------------------------------------------------------------------
-# 2. БЕЙЗЛАЙН-ВАРИАНТ: random-skip + KV проектируется через k_proj/v_proj
-#    того же слоя (как у EMA-метода), но БЕЗ EMA-компенсации hidden state.
-#    Изолирует вклад «честного» KV от вклада EMA-компенсации.
-# -----------------------------------------------------------------------------
-exp_baseline_p05_projkv() {
-  python -m src.scripts.train --config-name=baseline \
-    kv_cache_strategy=project_kv \
-    "logger.run_name=exp02-baseline-p0.5-projkv-" \
-    "${COMMON[@]}"
-}
-
-# -----------------------------------------------------------------------------
-# 3. ОСНОВНОЙ МЕТОД: EMA-компенсация (TODO.md, дефолтные гиперпараметры).
-#    P=3, Q=2, skip_ratio=0.3, β=0.9, R=8, target_ratio=0.4, δ=0.03, M=16.
+# Метод 3: EMA — основной метод (EMA-компенсация + simple KV propagate).
+#          ema_skip.yaml по умолчанию использует kv_cache_strategy=default
+#          (SimpleKVCachePropagate), как и требует постановка TODO.
 # -----------------------------------------------------------------------------
 exp_ema_default() {
   python -m src.scripts.train --config-name=ema_skip \
-    "logger.run_name=exp03-ema-default" \
+    "logger.run_name=exp-ema-default" \
+    $(mode_default) \
+    "${COMMON[@]}"
+}
+
+exp_ema_large_max_tokens() {
+  python -m src.scripts.train --config-name=ema_skip \
+    "logger.run_name=exp-ema-large-max-tokens" \
+    $(mode_large_max_tokens) \
+    "${COMMON[@]}"
+}
+
+exp_ema_large_seq_len() {
+  python -m src.scripts.train --config-name=ema_skip \
+    "logger.run_name=exp-ema-large-seq-len" \
+    $(mode_large_seq_len) \
     "${COMMON[@]}"
 }
 
 # -----------------------------------------------------------------------------
-# 4. EMA-метод — ablation по доле кандидатов на пропуск (skip_ratio).
+# ABLATION: EMA — доля кандидатов на пропуск (skip_ratio).
+#           Запускается в default-режиме (TriviaQA, 64 max_new_tokens).
 # -----------------------------------------------------------------------------
 exp_ema_ratio_0_2() {
   python -m src.scripts.train --config-name=ema_skip \
     layer_skipper.skip_ratio=0.2 \
-    "logger.run_name=exp04a-ema-ratio0.2" \
+    "logger.run_name=exp-ema-ratio0.2" \
+    $(mode_default) \
     "${COMMON[@]}"
 }
 
@@ -131,7 +162,8 @@ exp_ema_ratio_0_4() {
   python -m src.scripts.train --config-name=ema_skip \
     layer_skipper.skip_ratio=0.4 \
     layer_skipper.target_ratio=0.5 \
-    "logger.run_name=exp04b-ema-ratio0.4" \
+    "logger.run_name=exp-ema-ratio0.4" \
+    $(mode_default) \
     "${COMMON[@]}"
 }
 
@@ -140,221 +172,91 @@ exp_ema_ratio_0_5() {
     layer_skipper.skip_ratio=0.5 \
     layer_skipper.target_ratio=0.6 \
     layer_skipper.history_window=32 \
-    "logger.run_name=exp04c-ema-ratio0.5" \
+    "logger.run_name=exp-ema-ratio0.5" \
+    $(mode_default) \
     "${COMMON[@]}"
 }
 
 # -----------------------------------------------------------------------------
-# 5. EMA-метод — ablation по β (скорость EMA).
+# ABLATION: EMA — коэффициент сглаживания β.
 # -----------------------------------------------------------------------------
 exp_ema_beta_0_5() {
   python -m src.scripts.train --config-name=ema_skip \
     layer_skipper.beta=0.5 \
-    "logger.run_name=exp05a-ema-beta0.5" \
+    "logger.run_name=exp-ema-beta0.5" \
+    $(mode_default) \
     "${COMMON[@]}"
 }
 
 exp_ema_beta_0_99() {
   python -m src.scripts.train --config-name=ema_skip \
     layer_skipper.beta=0.99 \
-    "logger.run_name=exp05b-ema-beta0.99" \
+    "logger.run_name=exp-ema-beta0.99" \
+    $(mode_default) \
     "${COMMON[@]}"
 }
 
 # -----------------------------------------------------------------------------
-# 6. EMA-метод — ablation по periodic refresh (R).
+# KV-CACHE ABLATION: baseline и ema с ProjectKVCacheStrategy.
+#   - baseline+projkv  — изолирует вклад «честного» KV-проектора без EMA.
+#   - ema+projkv       — основной метод, но с проективным KV (альтернатива
+#                        simple-propagate, исследуется как ablation в Chapter 3).
 # -----------------------------------------------------------------------------
-exp_ema_refresh_4() {
-  python -m src.scripts.train --config-name=ema_skip \
-    layer_skipper.refresh_interval=4 \
-    "logger.run_name=exp06a-ema-refresh4" \
+exp_baseline_projkv() {
+  python -m src.scripts.train --config-name=baseline \
+    kv_cache_strategy=project_kv \
+    "logger.run_name=exp-baseline-projkv" \
+    $(mode_default) \
     "${COMMON[@]}"
 }
 
-exp_ema_refresh_32() {
+exp_ema_projkv() {
   python -m src.scripts.train --config-name=ema_skip \
-    layer_skipper.refresh_interval=32 \
-    "logger.run_name=exp06b-ema-refresh32" \
-    "${COMMON[@]}"
-}
-
-# -----------------------------------------------------------------------------
-# 7. EMA-метод — ablation по защищённым слоям (P, Q).
-# -----------------------------------------------------------------------------
-exp_ema_protected_strict() {
-  python -m src.scripts.train --config-name=ema_skip \
-    layer_skipper.protected_first=5 \
-    layer_skipper.protected_last=4 \
-    "logger.run_name=exp07a-ema-protected-strict" \
-    "${COMMON[@]}"
-}
-
-exp_ema_protected_loose() {
-  python -m src.scripts.train --config-name=ema_skip \
-    layer_skipper.protected_first=1 \
-    layer_skipper.protected_last=1 \
-    "logger.run_name=exp07b-ema-protected-loose" \
-    "${COMMON[@]}"
-}
-
-# -----------------------------------------------------------------------------
-# 8. EMA-метод — ablation адаптации p_skip.
-# -----------------------------------------------------------------------------
-exp_ema_pfix_0_5() {
-  python -m src.scripts.train --config-name=ema_skip \
-    layer_skipper.p_init=0.5 \
-    layer_skipper.p_min=0.5 \
-    layer_skipper.p_max=0.5 \
-    "logger.run_name=exp08a-ema-pfix0.5" \
-    "${COMMON[@]}"
-}
-
-exp_ema_p_aggressive() {
-  python -m src.scripts.train --config-name=ema_skip \
-    layer_skipper.p_init=0.8 \
-    layer_skipper.p_max=0.95 \
-    layer_skipper.target_ratio=0.7 \
-    layer_skipper.adaptation_rate=0.05 \
-    "logger.run_name=exp08b-ema-p-aggressive" \
-    "${COMMON[@]}"
-}
-
-# -----------------------------------------------------------------------------
-# 9. EMA-метод без проектируемого KV (используем simple-propagate).
-# -----------------------------------------------------------------------------
-exp_ema_default_simplekv() {
-  python -m src.scripts.train --config-name=ema_skip \
-    kv_cache_strategy=default \
-    "logger.run_name=exp09-ema-default-simplekv" \
-    "${COMMON[@]}"
-}
-
-# -----------------------------------------------------------------------------
-# 10. EMA-метод — расширенная выборка (×3) для самой стабильной оценки.
-# -----------------------------------------------------------------------------
-exp_ema_default_xl_eval() {
-  python -m src.scripts.train --config-name=ema_skip \
-    "dataset.generate.limit=$((EVAL_LIMIT * 3))" \
-    "logger.run_name=exp10-ema-default-xl-eval" \
+    kv_cache_strategy=project_kv \
+    "logger.run_name=exp-ema-projkv" \
+    $(mode_default) \
     "${COMMON[@]}"
 }
 
 # =============================================================================
-# Trainable-aligner методы. Они стартуют train→eval цикл из layer_skip.yaml,
-# поэтому не используют общий eval-only path. По окончании тренировки
-# evaluate_all_splits даёт ровно те же метрики (SkipMetrics + Generations),
-# что и eval-only методы — числа сравнимы напрямую.
+# Trainable-aligner методы. Сравниваются с full/baseline/ema в default-режиме
+# (TriviaQA, max_new_tokens=64). Конфигурация скиппера и KV-стратегии та же,
+# что у `exp_baseline_default` — отличие только в обучаемом aligner'е вместо
+# identity. Бюджет тренировки урезан (1 эпоха × 10k примеров).
 #
-# Дефолты подобраны под бюджет «1 эпоха × 10k примеров» — этого достаточно,
-# чтобы MLP-алайнеры сошлись к разумному качеству, но в разы быстрее, чем
-# дефолтные 5 эпох из layer_skip.yaml. eval во время тренировки запускается
-# раз в 1000 шагов и ограничен 500 батчами, чтобы не доминировать по времени.
-# Перекрыть значения можно через env: TRAIN_EPOCHS / TRAIN_LIMIT /
-# TRAIN_EVAL_STEPS / TRAIN_EVAL_MAX_BATCHES.
+# Переменные окружения для перекрытия:
+#   TRAIN_EPOCHS / TRAIN_LIMIT / TRAIN_EVAL_STEPS / TRAIN_EVAL_MAX_BATCHES.
 # =============================================================================
 TRAIN_EPOCHS="${TRAIN_EPOCHS:-1}"
 TRAIN_LIMIT="${TRAIN_LIMIT:-10000}"
 TRAIN_EVAL_STEPS="${TRAIN_EVAL_STEPS:-50000}"
 TRAIN_EVAL_MAX_BATCHES="${TRAIN_EVAL_MAX_BATCHES:-500}"
 
-# `+` нужен для dataset.train.limit, потому что в configs/dataset/default.yaml
-# у train-сплита поля `limit` нет (в отличие от generate-сплита) — без `+`
-# Hydra бросит struct-error "Key 'limit' is not in struct".
-#
-# llm.model_loading.device_map=cuda:0 — обязательно для тренировки. Дефолтный
-# device_map=auto в configs/llm/qwen3.yaml использует accelerate-хуки, которые
-# работают только при inference (eval-only прогоны OK), а при обратном проходе
-# часть весов остаётся на CPU и forward падает с
-#   RuntimeError: Expected all tensors to be on the same device.
+# device_map=cuda:0 обязателен для тренировки: дефолтный auto (accelerate hooks)
+# работает только при inference и падает на обратном проходе.
 TRAIN_OVERRIDES=(
   "training.num_epochs=${TRAIN_EPOCHS}"
   "+dataset.train.limit=${TRAIN_LIMIT}"
   "training.eval_steps=${TRAIN_EVAL_STEPS}"
   "training.eval_steps_max_batches=${TRAIN_EVAL_MAX_BATCHES}"
   "llm.model_loading.device_map=cuda:0"
+  "dataset.generate.limit=${EVAL_LIMIT}"
 )
 
-# -----------------------------------------------------------------------------
-# 14. ОБУЧАЕМЫЙ АЛАЙНЕР: один общий MLP подменяет любой пропущенный слой.
-#     Самый простой обучаемый бейзлайн против EMA-компенсации.
-#     Random-skip и при тренировке, и на eval (uniform_layer_skipper).
-# -----------------------------------------------------------------------------
-exp_mlp_aligner_p05_half() {
+# Общий MLP-aligner для всех пропущенных слоёв (самый простой обучаемый бейзлайн).
+exp_mlp_aligner_default() {
   python -m src.scripts.train --config-name=layer_skip \
-    "logger.run_name=exp14a-mlp-aligner-p0.5-half-" \
+    "logger.run_name=exp-mlp-aligner-default" \
     "${TRAIN_OVERRIDES[@]}" \
     "${COMMON[@]}"
 }
 
-# 14b. Агрессивный режим: тот же MLP, но p=0.7 — проверяем, тянет ли
-#      один общий MLP высокую частоту пропусков.
-exp_mlp_aligner_p07_half() {
-  python -m src.scripts.train --config-name=layer_skip \
-    layer_skipper.p=0.7 \
-    "logger.run_name=exp14b-mlp-aligner-p0.7-half" \
-    "${TRAIN_OVERRIDES[@]}" \
-    "${COMMON[@]}"
-}
-
-# -----------------------------------------------------------------------------
-# 15. ОБУЧАЕМЫЙ АЛАЙНЕР: per-layer MLP — отдельный MLP на каждый слой.
-#     Самый сильный обучаемый бейзлайн → прямой конкурент EMA по качеству.
-# -----------------------------------------------------------------------------
-exp_per_layer_mlp_p05_half() {
+# Per-layer MLP — отдельный aligner на каждый слой; наиболее сильный
+# обучаемый бейзлайн против EMA-компенсации.
+exp_per_layer_mlp_default() {
   python -m src.scripts.train --config-name=layer_skip \
     aligner=per_layer_mlp \
-    "logger.run_name=exp15a-per-layer-mlp-p0.5-half-" \
-    "${TRAIN_OVERRIDES[@]}" \
-    "${COMMON[@]}"
-}
-
-# 15b. Per-layer MLP при p=0.7 — параллельно с exp_mlp_aligner_p07_half и
-#      exp_baseline_p07_half (одна рабочая точка по агрессивности скипа).
-exp_per_layer_mlp_p07_half() {
-  python -m src.scripts.train --config-name=layer_skip \
-    aligner=per_layer_mlp \
-    layer_skipper.p=0.7 \
-    "logger.run_name=exp15b-per-layer-mlp-p0.7-half" \
-    "${TRAIN_OVERRIDES[@]}" \
-    "${COMMON[@]}"
-}
-
-# 15c. Per-layer MLP, но скипаем средние слои (как exp_baseline_p05_middle).
-#      Проверяет, помогает ли обучаемая компенсация именно в «опасной» зоне.
-exp_per_layer_mlp_p05_middle() {
-  python -m src.scripts.train --config-name=layer_skip \
-    aligner=per_layer_mlp \
-    "layer_skipper.skip_percentile_ranges=[[0.25, 0.75]]" \
-    "logger.run_name=exp15c-per-layer-mlp-p0.5-middle" \
-    "${TRAIN_OVERRIDES[@]}" \
-    "${COMMON[@]}"
-}
-
-# -----------------------------------------------------------------------------
-# 16. КРОСС-КОМБИНАЦИЯ: per-layer MLP + проекция KV (как у EMA-метода).
-#     Изолирует вклад «честного» KV поверх обучаемого алайнера.
-# -----------------------------------------------------------------------------
-exp_per_layer_mlp_projkv() {
-  python -m src.scripts.train --config-name=layer_skip \
-    aligner=per_layer_mlp \
-    kv_cache_strategy=project_kv \
-    "logger.run_name=exp16-per-layer-mlp-projkv" \
-    "${TRAIN_OVERRIDES[@]}" \
-    "${COMMON[@]}"
-}
-
-# -----------------------------------------------------------------------------
-# 17. ПРЯМОЙ A/B С BASELINE p=0.3: per-layer MLP при том же скиппере,
-#     percentile-диапазоне и kv_cache_strategy, что и в exp_baseline_p03_half.
-#     Все остальные части пайплайна максимально совпадают — единственное
-#     отличие от exp01b — обучаемый per-layer MLP вместо identity-aligner.
-#     Удобно для прямого сравнения «обучение vs ничего» при iso-`k`.
-# -----------------------------------------------------------------------------
-exp_per_layer_mlp_p03_half() {
-  python -m src.scripts.train --config-name=layer_skip \
-    aligner=per_layer_mlp \
-    layer_skipper.p=0.3 \
-    "logger.run_name=exp17-per-layer-mlp-p0.3-half-" \
+    "logger.run_name=exp-per-layer-mlp-default" \
     "${TRAIN_OVERRIDES[@]}" \
     "${COMMON[@]}"
 }
@@ -363,45 +265,38 @@ exp_per_layer_mlp_p03_half() {
 # Раннер
 # =============================================================================
 ALL_EXPS=(
-  # === reference / eval-only baselines ===
-  # exp_full_model
-  # exp_baseline_p05_half
-  # exp_baseline_p03_half
-  # exp_baseline_p07_half
-  # exp_baseline_p05_all
-  # exp_baseline_p05_middle
-  # exp_baseline_p05_projkv
-  # === EMA method + ablations ===
-  # exp_ema_default
-  # exp_ema_ratio_0_2
-  # exp_ema_ratio_0_4
-  # exp_ema_ratio_0_5
-  # exp_ema_beta_0_5
-  # exp_ema_beta_0_99
-  # exp_ema_refresh_4
-  # exp_ema_refresh_32
-  # exp_ema_protected_strict
-  # exp_ema_protected_loose
-  # exp_ema_pfix_0_5
-  # exp_ema_p_aggressive
-  # exp_ema_default_simplekv
-  # exp_ema_default_xl_eval
-  # === trainable aligners (require training) ===
-  # exp_mlp_aligner_p05_half
-  # exp_mlp_aligner_p07_half
-  exp_per_layer_mlp_p05_half
-  exp_per_layer_mlp_p07_half
-  exp_per_layer_mlp_p05_middle
-  # === cross-combinations ===
-  exp_per_layer_mlp_projkv
-  # === iso-k A/B with baseline p=0.3 ===
-  exp_per_layer_mlp_p03_half
+  # === FULL MODEL (reference) ===
+  exp_full_default
+  exp_full_large_max_tokens
+  exp_full_large_seq_len
+  # === BASELINE (random-skip без EMA) ===
+  exp_baseline_default
+  exp_baseline_large_max_tokens
+  exp_baseline_large_seq_len
+  # === EMA METHOD (основной, simple KV propagate) ===
+  exp_ema_default
+  exp_ema_large_max_tokens
+  exp_ema_large_seq_len
+  # === EMA ablations: skip_ratio ===
+  exp_ema_ratio_0_2
+  exp_ema_ratio_0_4
+  exp_ema_ratio_0_5
+  # === EMA ablations: beta ===
+  exp_ema_beta_0_5
+  exp_ema_beta_0_99
+  # === KV-cache ablation: ProjectKVCacheStrategy ===
+  exp_baseline_projkv
+  exp_ema_projkv
+  # === Trainable aligners (требуют тренировки) ===
+  exp_mlp_aligner_default
+  exp_per_layer_mlp_default
 )
 
 usage() {
   echo "Usage: bash exps.sh <name|all|list|aggregate>"
   echo
-  echo "Доступные эксперименты (override'ы — через env: COMET_WS, EVAL_LIMIT):"
+  echo "Доступные эксперименты (override'ы — через env: COMET_WS, EVAL_LIMIT,"
+  echo "EVAL_LIMIT_LONG, SKIP_MAX_TOKENS_DEFAULT, SKIP_MAX_TOKENS_LARGE):"
   for name in "${ALL_EXPS[@]}"; do
     echo "  - ${name}"
   done
