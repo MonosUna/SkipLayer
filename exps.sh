@@ -121,6 +121,71 @@ exp_baseline_large_seq_len() {
 }
 
 # -----------------------------------------------------------------------------
+# Метод 2b: BASELINE с уменьшенной вдвое вероятностью пропуска (p=0.25).
+#           Цель — выровнять wall-clock с EMA: baseline@p=0.5 «дешевле» EMA
+#           на ~10%, но даёт почти в 2 раза меньше accuracy. При p=0.25
+#           среднее число пропусков становится сравнимо с EMA (≈ 4-5 слоёв),
+#           что даёт честное сравнение «за то же время».
+# -----------------------------------------------------------------------------
+exp_baseline_p025_default() {
+  python -m src.scripts.train --config-name=baseline \
+    layer_skipper.p=0.25 \
+    "logger.run_name=exp-baseline-p025-default" \
+    $(mode_default) \
+    "${COMMON[@]}"
+}
+
+exp_baseline_p025_large_max_tokens() {
+  python -m src.scripts.train --config-name=baseline \
+    layer_skipper.p=0.25 \
+    "logger.run_name=exp-baseline-p025-large-max-tokens" \
+    $(mode_large_max_tokens) \
+    "${COMMON[@]}"
+}
+
+exp_baseline_p025_large_seq_len() {
+  python -m src.scripts.train --config-name=baseline \
+    layer_skipper.p=0.25 \
+    "logger.run_name=exp-baseline-p025-large-seq-len" \
+    $(mode_large_seq_len) \
+    "${COMMON[@]}"
+}
+
+# -----------------------------------------------------------------------------
+# Метод 2c: BASELINE с пропуском по ВСЕМ слоям (skip_percentile_ranges=[[0,1]])
+#           с вероятностью p=0.125. Среднее число пропусков на шаг
+#           36 * 0.125 = 4.5 — сравнимо с EMA. Отличие от p025: пропуски
+#           равномерно распределены по всей сети (включая «важные» нижние
+#           и верхние слои), а не только в верхней половине.
+# -----------------------------------------------------------------------------
+exp_baseline_p0125_all_default() {
+  python -m src.scripts.train --config-name=baseline \
+    layer_skipper.p=0.125 \
+    'layer_skipper.skip_percentile_ranges=[[0.0,1.0]]' \
+    "logger.run_name=exp-baseline-p0125-all-default" \
+    $(mode_default) \
+    "${COMMON[@]}"
+}
+
+exp_baseline_p0125_all_large_max_tokens() {
+  python -m src.scripts.train --config-name=baseline \
+    layer_skipper.p=0.125 \
+    'layer_skipper.skip_percentile_ranges=[[0.0,1.0]]' \
+    "logger.run_name=exp-baseline-p0125-all-large-max-tokens" \
+    $(mode_large_max_tokens) \
+    "${COMMON[@]}"
+}
+
+exp_baseline_p0125_all_large_seq_len() {
+  python -m src.scripts.train --config-name=baseline \
+    layer_skipper.p=0.125 \
+    'layer_skipper.skip_percentile_ranges=[[0.0,1.0]]' \
+    "logger.run_name=exp-baseline-p0125-all-large-seq-len" \
+    $(mode_large_seq_len) \
+    "${COMMON[@]}"
+}
+
+# -----------------------------------------------------------------------------
 # Метод 3: EMA — основной метод (EMA-компенсация + simple KV propagate).
 #          ema_skip.yaml по умолчанию использует kv_cache_strategy=default
 #          (SimpleKVCachePropagate), как и требует постановка TODO.
@@ -261,35 +326,66 @@ exp_per_layer_mlp_default() {
     "${COMMON[@]}"
 }
 
+# Residual-MLP aligner: общий MLP с residual-связкой x + mlp(x).
+# Эмпирически проще оптимизируется, т.к. MLP учится приращению Δ_l,
+# а не реконструкции всего hidden state.
+exp_residual_mlp_aligner_default() {
+  python -m src.scripts.train --config-name=layer_skip \
+    aligner=residual_mlp \
+    "logger.run_name=exp-residual-mlp-aligner-default" \
+    "${TRAIN_OVERRIDES[@]}" \
+    "${COMMON[@]}"
+}
+
+# Residual per-layer MLP — самый «жирный» trainable-вариант:
+# свой MLP на каждый слой + residual-связка.
+exp_residual_per_layer_mlp_default() {
+  python -m src.scripts.train --config-name=layer_skip \
+    aligner=residual_per_layer_mlp \
+    "logger.run_name=exp-residual-per-layer-mlp-default" \
+    "${TRAIN_OVERRIDES[@]}" \
+    "${COMMON[@]}"
+}
+
 # =============================================================================
 # Раннер
 # =============================================================================
 ALL_EXPS=(
   # === FULL MODEL (reference) ===
-  exp_full_default
-  exp_full_large_max_tokens
-  exp_full_large_seq_len
-  # === BASELINE (random-skip без EMA) ===
-  exp_baseline_default
-  exp_baseline_large_max_tokens
-  exp_baseline_large_seq_len
+  # exp_full_default
+  # exp_full_large_max_tokens
+  # exp_full_large_seq_len
+  # === BASELINE (random-skip без EMA, p=0.5) ===
+  # exp_baseline_default
+  # exp_baseline_large_max_tokens
+  # exp_baseline_large_seq_len
+  # === BASELINE с p=0.25 (выровненный по wall-clock с EMA) ===
+  exp_baseline_p025_default
+  exp_baseline_p025_large_max_tokens
+  exp_baseline_p025_large_seq_len
+  # === BASELINE с пропуском по всем слоям, p=0.125 ===
+  exp_baseline_p0125_all_default
+  exp_baseline_p0125_all_large_max_tokens
+  exp_baseline_p0125_all_large_seq_len
   # === EMA METHOD (основной, simple KV propagate) ===
-  exp_ema_default
-  exp_ema_large_max_tokens
-  exp_ema_large_seq_len
+  # exp_ema_default
+  # exp_ema_large_max_tokens
+  # exp_ema_large_seq_len
   # === EMA ablations: skip_ratio ===
-  exp_ema_ratio_0_2
-  exp_ema_ratio_0_4
-  exp_ema_ratio_0_5
+  # exp_ema_ratio_0_2
+  # exp_ema_ratio_0_4
+  # exp_ema_ratio_0_5
   # === EMA ablations: beta ===
-  exp_ema_beta_0_5
-  exp_ema_beta_0_99
+  # exp_ema_beta_0_5
+  # exp_ema_beta_0_99
   # === KV-cache ablation: ProjectKVCacheStrategy ===
-  exp_baseline_projkv
-  exp_ema_projkv
+  # exp_baseline_projkv
+  # exp_ema_projkv
   # === Trainable aligners (требуют тренировки) ===
-  exp_mlp_aligner_default
-  exp_per_layer_mlp_default
+  # exp_mlp_aligner_default
+  # exp_per_layer_mlp_default
+  exp_residual_mlp_aligner_default
+  exp_residual_per_layer_mlp_default
 )
 
 usage() {
