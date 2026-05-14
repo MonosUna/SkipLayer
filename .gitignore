@@ -11,7 +11,7 @@ __pycache__
 launch.sh
 
 # Hydra
-/outputs
+# /outputs
 
 # Vscode
 .vscode

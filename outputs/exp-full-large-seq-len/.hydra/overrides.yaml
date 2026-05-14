@@ -1,0 +1,7 @@
+- layer_skipper.p=0.0
+- logger.run_name=exp-full-large-seq-len
+- dataset=eval_long
+- dataset.generate.limit=20
+- metrics.generate.1.max_new_tokens=64
+- logger=cometml_jsonl
+- logger.workspace=serega-pirat
