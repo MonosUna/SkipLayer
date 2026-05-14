@@ -1,0 +1,148 @@
+{
+  "llm": {
+    "_target_": "src.models.llms.qwen3.CustomQwen3ForCausalLM",
+    "model_loading": {
+      "pretrained_model_name_or_path": "Qwen/Qwen3-4B-Instruct-2507",
+      "trust_remote_code": true,
+      "dtype": "torch.bfloat16",
+      "device_map": "auto"
+    }
+  },
+  "aligner": {
+    "_target_": "src.models.aligners.base_aligner.BaseAligner"
+  },
+  "layer_skipper": {
+    "_target_": "src.models.layer_skippers.uniform_layer_skipper.UniformLayerSkipper",
+    "num_layers": 36,
+    "p": 0.25,
+    "skip_percentile_ranges": [
+      [
+        0.5,
+        1.0
+      ]
+    ]
+  },
+  "iterating_strategy": {
+    "_target_": "src.models.iterating_strategies.layer_skip.LayerSkipIterationStrategy",
+    "kv_cache_strategy": {
+      "_target_": "src.models.kv_cache_strategies.simple_propagate.SimpleKVCachePropagate"
+    }
+  },
+  "kv_cache_strategy": {
+    "_target_": "src.models.kv_cache_strategies.simple_propagate.SimpleKVCachePropagate"
+  },
+  "loss": {
+    "_target_": "src.losses.ce_loss.CELoss"
+  },
+  "logger": {
+    "_target_": "src.loggers.jsonl_logger.MultiLogger",
+    "workspace": "serega-pirat",
+    "run_name": "exp-baseline-p025-large-seq-len",
+    "loggers": [
+      {
+        "_target_": "src.loggers.logger.CometMLLogger",
+        "api_key": "Ln8HzeS5sByuvTqyCYi9khkaO",
+        "project_name": "skiplayer-diploma-new",
+        "workspace": "serega-pirat",
+        "run_name": "exp-baseline-p025-large-seq-len",
+        "auto_metric_logging": false,
+        "auto_param_logging": false
+      },
+      {
+        "_target_": "src.loggers.jsonl_logger.JsonlFileLogger",
+        "log_dir": null,
+        "run_name": "exp-baseline-p025-large-seq-len"
+      }
+    ]
+  },
+  "dataset": {
+    "generate": {
+      "_target_": "src.datasets.wikitext_dataset.WikitextDataset",
+      "dataset_name": "Salesforce/wikitext",
+      "config_name": "wikitext-2-raw-v1",
+      "split": "test",
+      "limit": 20
+    }
+  },
+  "dataloader": {
+    "generate": {
+      "_target_": "torch.utils.data.DataLoader",
+      "_partial_": true,
+      "batch_size": 1,
+      "shuffle": false,
+      "num_workers": 0,
+      "pin_memory": true,
+      "drop_last": false
+    }
+  },
+  "collator": {
+    "generate": {
+      "_target_": "src.collators.generation_collator.GenerationCollator"
+    }
+  },
+  "metrics": {
+    "generate": [
+      {
+        "_target_": "src.metrics.ema_candidate_stats.EmaCandidateStats",
+        "tokenizer": {
+          "_target_": "transformers.AutoTokenizer.from_pretrained",
+          "pretrained_model_name_or_path": "Qwen/Qwen3-4B-Instruct-2507"
+        }
+      },
+      {
+        "_target_": "src.metrics.skip_metrics.SkipMetrics",
+        "tokenizer": {
+          "_target_": "transformers.AutoTokenizer.from_pretrained",
+          "pretrained_model_name_or_path": "Qwen/Qwen3-4B-Instruct-2507"
+        },
+        "max_new_tokens": 64
+      },
+      {
+        "_target_": "src.metrics.generations.Generations",
+        "tokenizer": {
+          "_target_": "transformers.AutoTokenizer.from_pretrained",
+          "pretrained_model_name_or_path": "Qwen/Qwen3-4B-Instruct-2507"
+        },
+        "max_new_tokens": 256,
+        "do_sample": false
+      }
+    ]
+  },
+  "training_mode": false,
+  "training": {
+    "batch_size": 1,
+    "learning_rate": 0.0001,
+    "weight_decay": 0.01,
+    "num_epochs": 1,
+    "warmup_steps": 0,
+    "max_grad_norm": 1.0,
+    "mixed_precision": true,
+    "mixed_precision_dtype": "torch.bfloat16",
+    "checkpoint_save_epochs": 1,
+    "eval_steps": 1000,
+    "eval_steps_max_batches": 100,
+    "loss_logging_steps": 10,
+    "loss_logging_window": 50,
+    "seed": 42
+  },
+  "output_dir": "./outputs",
+  "checkpoint_dir": "./checkpoints",
+  "checkpoint_weights_only": true,
+  "init_checkpoint_path": null,
+  "log_checkpoint": false,
+  "huggingface": {
+    "repo_id": null,
+    "token": "",
+    "private": false
+  },
+  "device": "cuda",
+  "model": {
+    "num_hidden_layers": 36,
+    "hidden_size": 2560,
+    "num_attention_heads": 32,
+    "num_key_value_heads": 8,
+    "head_dim": 128,
+    "kv_hidden_size": 1024,
+    "intermediate_size": 9728
+  }
+}

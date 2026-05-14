@@ -2,6 +2,12 @@ run,generate/count/samples,generate/candidate_count/eligible_total,generate/cand
 exp-baseline-default,,,
 exp-baseline-large-max-tokens,,,
 exp-baseline-large-seq-len,,,
+exp-baseline-p0125-all-default,,,
+exp-baseline-p0125-all-large-max-tokens,,,
+exp-baseline-p0125-all-large-seq-len,,,
+exp-baseline-p025-default,,,
+exp-baseline-p025-large-max-tokens,,,
+exp-baseline-p025-large-seq-len,,,
 exp-baseline-projkv,,,
 exp-ema-beta0.5,50.0,450.0,0.0
 exp-ema-beta0.99,50.0,450.0,0.0
@@ -17,3 +23,5 @@ exp-full-large-max-tokens,,,
 exp-full-large-seq-len,,,
 exp-mlp-aligner-default,,,
 exp-per-layer-mlp-default,,,
+exp-residual-mlp-aligner-default,,,
+exp-residual-per-layer-mlp-default,,,
