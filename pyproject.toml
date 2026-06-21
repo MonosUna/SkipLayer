@@ -1,0 +1,79 @@
+[build-system]
+build-backend = "setuptools.build_meta"
+
+requires = [ "setuptools>=68", "wheel" ]
+
+[project]
+name = "skiplayer"
+version = "0.1.0"
+description = "Layer-Skip LLM training framework"
+readme = "README.md"
+requires-python = ">=3.10"
+
+classifiers = [
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+  "accelerate==1.12",
+  "comet-ml==3.54.2",
+  "datasets==4.4.1",
+  "hydra-core==1.3.2",
+  "huggingface-hub==0.36.0",
+  "numpy==2.2.6",
+  "omegaconf==2.3",
+  "torch==2.9.1",
+  "tqdm==4.67.1",
+  "transformers==4.57.1",
+  "wandb==0.24.1",
+]
+
+optional-dependencies.dev = [
+  "black==26.3",
+  "isort==8.0.1",
+  "pre-commit==4.5.1",
+  "pyproject-fmt==2.5",
+  "ruff==0.15.5",
+  "yamlfmt==0.14",
+]
+
+[tool.setuptools.packages.find]
+where = [ "." ]
+include = [ "src*" ]
+namespaces = true
+
+[tool.black]
+line-length = 100
+target-version = [ "py310" ]
+include = "\\.pyi?$"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+src = [ "src" ]
+
+format.indent-style = "space"
+format.quote-style = "double"
+format.line-ending = "lf"
+format.skip-magic-trailing-comma = false
+lint.select = [
+  "B",  # bugbear
+  "E",  # pycodestyle
+  "F",  # pyflakes
+  "I",  # import sorting
+  "UP", # pyupgrade
+  "W",  # warnings
+]
+lint.ignore = [
+  "E203",
+  "E501",
+]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+known_first_party = [ "skiplayer" ]
+src_paths = [ "src" ]

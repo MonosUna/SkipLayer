@@ -1,0 +1,5 @@
+_target_: src.loggers.jsonl_logger.JsonlFileLogger
+# Hydra usually chdir's into the per-run directory; use the cwd as
+# log_dir by default so per-run artifacts live next to the Hydra logs.
+log_dir: null
+run_name: ${now:%Y-%m-%d_%H-%M-%S}

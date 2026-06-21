@@ -1,0 +1,13 @@
+_target_: src.models.layer_skippers.ema_skipper.EmaSkipper
+num_layers: ${model.num_hidden_layers}
+protected_first: 3
+protected_last: 2
+skip_ratio: 0.3
+beta: 0.9
+refresh_interval: 8
+p_init: 0.5
+p_min: 0.1
+p_max: 0.9
+target_ratio: 0.4
+adaptation_rate: 0.03
+history_window: 16

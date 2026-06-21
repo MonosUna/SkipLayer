@@ -1,0 +1,2 @@
+_target_: src.models.aligners.residual_mlp_aligner.ResidualMLPAligner
+hidden_size: ${model.hidden_size}

@@ -1,0 +1,6 @@
+generate:
+  _target_: src.datasets.wikitext_dataset.WikitextDataset
+  dataset_name: Salesforce/wikitext
+  config_name: wikitext-2-raw-v1
+  split: test
+  limit: 20

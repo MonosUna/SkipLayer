@@ -1,0 +1,57 @@
+# Baseline run: skip random layers without any aligner-based hidden state
+# correction. The KV cache is filled via SimpleKVCachePropagate (last computed
+# layer's k/v copied into the skipped layer's slot). The aligner is the
+# identity (BaseAligner), so this measures how much accuracy is lost purely
+# from layer skipping with KV propagation.
+defaults:
+  - llm: qwen3
+  - aligner: default            # identity, no hidden alignment
+  - layer_skipper: uniform_layer_skipper
+  - iterating_strategy: layer_skip
+  - kv_cache_strategy: default
+  - loss: ce
+  - logger: cometml
+  - dataset: eval_only
+  - dataloader: eval_only
+  - collator: eval_only
+  - metrics: eval_only
+  - _self_
+
+# Eval only: no aligner is trained, so there is nothing to optimize.
+training_mode: False
+
+# Kept for completeness / interpolation; unused when training_mode=False.
+training:
+  batch_size: 1
+  learning_rate: 1e-4
+  weight_decay: 0.01
+  num_epochs: 1
+  warmup_steps: 0
+  max_grad_norm: 1.0
+  mixed_precision: true
+  mixed_precision_dtype: torch.bfloat16
+  checkpoint_save_epochs: 1
+  eval_steps: 1000
+  eval_steps_max_batches: 100
+  loss_logging_steps: 10
+  loss_logging_window: 50
+  seed: 42
+
+output_dir: ./outputs
+checkpoint_dir: ./checkpoints
+checkpoint_weights_only: true
+init_checkpoint_path: null
+log_checkpoint: false
+
+huggingface:
+  repo_id: null
+  token: ${oc.env:HF_TOKEN,""}
+  private: false
+
+device: cuda
+
+hydra:
+  run:
+    dir: ${output_dir}/${logger.run_name}
+  job:
+    chdir: true

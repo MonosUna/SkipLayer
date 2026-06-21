@@ -1,0 +1,57 @@
+# EMA-compensation layer-skip method (TODO.md).
+#
+# All compensation is done via running EMA estimates of per-layer
+# Δ = h_out - h_in; no learnable aligner is involved. The KV cache
+# for skipped layers is filled by projecting the compensated hidden
+# state through that layer's own k_proj/v_proj. Hence training is not
+# needed: this is an inference-only method.
+defaults:
+  - llm: qwen3
+  - aligner: default                    # identity; compensation is in the strategy
+  - layer_skipper: ema_skipper
+  - iterating_strategy: ema_layer_skip
+  - kv_cache_strategy: default
+  - loss: ce
+  - logger: cometml
+  - dataset: eval_only
+  - dataloader: eval_only
+  - collator: eval_only
+  - metrics: eval_only
+  - _self_
+
+training_mode: False
+
+training:
+  batch_size: 1
+  learning_rate: 1e-4
+  weight_decay: 0.01
+  num_epochs: 1
+  warmup_steps: 0
+  max_grad_norm: 1.0
+  mixed_precision: true
+  mixed_precision_dtype: torch.bfloat16
+  checkpoint_save_epochs: 1
+  eval_steps: 1000
+  eval_steps_max_batches: 100
+  loss_logging_steps: 10
+  loss_logging_window: 50
+  seed: 42
+
+output_dir: ./outputs
+checkpoint_dir: ./checkpoints
+checkpoint_weights_only: true
+init_checkpoint_path: null
+log_checkpoint: false
+
+huggingface:
+  repo_id: null
+  token: ${oc.env:HF_TOKEN,""}
+  private: false
+
+device: cuda
+
+hydra:
+  run:
+    dir: ${output_dir}/${logger.run_name}
+  job:
+    chdir: true

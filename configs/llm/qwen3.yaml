@@ -1,0 +1,6 @@
+_target_: src.models.llms.qwen3.CustomQwen3ForCausalLM
+model_loading:
+  pretrained_model_name_or_path: Qwen/Qwen3-4B-Instruct-2507
+  trust_remote_code: true
+  dtype: torch.bfloat16
+  device_map: auto
