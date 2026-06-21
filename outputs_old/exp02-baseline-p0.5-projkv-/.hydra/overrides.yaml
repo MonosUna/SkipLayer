@@ -1,5 +1,0 @@
-- kv_cache_strategy=project_kv
-- logger.run_name=exp02-baseline-p0.5-projkv-
-- logger=cometml_jsonl
-- logger.workspace=serega-pirat
-- dataset.generate.limit=50

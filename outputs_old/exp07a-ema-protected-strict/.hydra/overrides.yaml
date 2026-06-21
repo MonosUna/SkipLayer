@@ -1,6 +1,0 @@
-- layer_skipper.protected_first=5
-- layer_skipper.protected_last=4
-- logger.run_name=exp07a-ema-protected-strict
-- logger=cometml_jsonl
-- logger.workspace=serega-pirat
-- dataset.generate.limit=50

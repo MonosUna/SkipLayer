@@ -16,11 +16,6 @@ from transformers.utils.generic import check_model_inputs
 
 
 class CustomQwen3Model(Qwen3PreTrainedModel):
-    """Qwen3 model whose decoder loop is replaced by a configurable
-    ``iteration_strategy``. For SkipLayer this is the layer-skip strategy
-    that may substitute one or more decoder layers with the aligner.
-    """
-
     def __init__(self, config: Qwen3Config):
         super().__init__(config)
         self.padding_idx = config.pad_token_id
@@ -35,7 +30,6 @@ class CustomQwen3Model(Qwen3PreTrainedModel):
         self.gradient_checkpointing = False
         self.has_sliding_layers = "sliding_attention" in self.config.layer_types
 
-        # Initialize weights and apply final processing
         self.post_init()
 
     @check_model_inputs
@@ -132,7 +126,6 @@ class CustomQwen3ForCausalLM(Qwen3PreTrainedModel, GenerationMixin):
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
-        # Initialize weights and apply final processing
         self.post_init()
 
     def freeze_llm_parameters(self) -> None:
@@ -185,9 +178,6 @@ class CustomQwen3ForCausalLM(Qwen3PreTrainedModel, GenerationMixin):
         )
 
     def custom_forward(self, batch):
-        """Forward used by the trainer/metrics. Returns the original batch
-        enriched with hidden states, logits and the per-layer skip tensor.
-        """
         input_ids = batch["input_ids"]
         attention_mask = batch["attention_mask"]
         compute_logits = batch.get("compute_logits", True)
@@ -209,7 +199,7 @@ class CustomQwen3ForCausalLM(Qwen3PreTrainedModel, GenerationMixin):
         batch["hidden_states"] = hidden_states
         batch["model_past_key_values"] = model_past_key_values
         if compute_logits:
-            batch["logits"] = self.lm_head(hidden_states)  # [B, S, V]
+            batch["logits"] = self.lm_head(hidden_states)
 
         if skip_tensor is not None:
             batch["skip_tensor"] = skip_tensor

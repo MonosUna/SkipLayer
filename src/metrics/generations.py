@@ -8,10 +8,6 @@ from tqdm import tqdm
 
 
 class Generations(BaseMetric):
-    """Greedy/sampling generations via ``model.generate``. Reports decoded
-    text and average wall-clock generation time per token.
-    """
-
     def __init__(
         self,
         tokenizer: Any,

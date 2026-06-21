@@ -1,7 +1,0 @@
-- layer_skipper.skip_ratio=0.4
-- layer_skipper.target_ratio=0.5
-- logger.run_name=exp-ema-ratio0.4
-- dataset.generate.limit=50
-- metrics.generate.1.max_new_tokens=64
-- logger=cometml_jsonl
-- logger.workspace=serega-pirat

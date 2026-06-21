@@ -2,7 +2,6 @@ from typing import Any
 
 
 def get_layer_attention_mask(causal_mask_mapping: Any, decoder_layer: Any) -> Any:
-    """Resolve the right attention mask for the decoder layer across model families."""
     if not isinstance(causal_mask_mapping, dict):
         return causal_mask_mapping
 

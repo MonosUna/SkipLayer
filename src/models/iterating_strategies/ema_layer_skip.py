@@ -4,31 +4,6 @@ from src.models.llms.common import get_layer_attention_mask
 
 
 class EmaLayerSkipIterationStrategy:
-    """Iteration strategy implementing the EMA-compensation method (see
-    TODO.md and ``EmaSkipper``).
-
-    Behaviour:
-
-    * **Training** — no layer is skipped at all. This method is
-      inference-only; the strategy degrades to a normal forward so that
-      hooking it up does not interfere with any auxiliary training.
-    * **Prefill** (multi-token forward) — runs every layer fully,
-      collects ``(h_in, h_out)`` per layer and hands them to
-      ``layer_skipper.record_prefill``, which initializes EMA buffers
-      and picks the K candidate layers.
-    * **Single-token generation** — for every layer:
-        - if ``layer_skipper.should_skip(i)`` returns ``True``, the
-          layer's output is taken to be ``h_in + EMA[i]`` (compensated),
-          and the layer's KV cache slot is filled by the configured
-          ``kv_cache_strategy`` (which for this method is
-          ``ProjectKVCacheStrategy`` — projects the compensated hidden
-          state through the layer's k_proj/v_proj).
-        - otherwise the layer is executed normally and its
-          ``(h_in, h_out)`` updates the EMA estimate.
-      After the loop, ``layer_skipper.end_step(num_skipped)`` is called
-      to update the adaptive ``p_skip`` and tick the step counter.
-    """
-
     def __init__(self, kv_cache_strategy):
         self.kv_cache_strategy = kv_cache_strategy
 
@@ -78,9 +53,6 @@ class EmaLayerSkipIterationStrategy:
         if llm.layer_skipper is None:
             raise ValueError("EmaLayerSkipIterationStrategy requires a layer_skipper")
 
-        # The skipper may not implement all EMA-method hooks (e.g. when
-        # SkipMetrics temporarily swaps it with BaseLayerSkipper to compute
-        # the full-model reference). Resolve the hooks defensively here.
         skipper = llm.layer_skipper
         has_ema_api = (
             hasattr(skipper, "reset")
@@ -97,15 +69,11 @@ class EmaLayerSkipIterationStrategy:
             try:
                 return bool(fn(i))
             except TypeError:
-                # Fallback for skippers whose ``should_skip`` expects (x, i).
                 return bool(fn(hidden_states, i))
 
         is_single_token = hidden_states.size(1) == 1
         is_inference = not llm.training
 
-        # Training or prefill at inference time — no skipping. On prefill
-        # we additionally record per-layer (h_in, h_out) and hand them to
-        # the skipper so it can pick candidates and seed EMA buffers.
         if not (is_inference and is_single_token):
             record_io = is_inference and not is_single_token and has_ema_api
             if record_io:
@@ -132,7 +100,6 @@ class EmaLayerSkipIterationStrategy:
                 "skip_tensor": skip_tensor,
             }
 
-        # Single-token inference path.
         skip_vector: list[int] = []
         last_calculated_layer = None
         cos, sin = position_embeddings
@@ -140,11 +107,6 @@ class EmaLayerSkipIterationStrategy:
         num_skipped = 0
 
         for i, decoder_layer in enumerate(layers):
-            # KV propagation needs at least one already-computed layer to
-            # source from (only matters for ``SimpleKVCachePropagate``;
-            # ``ProjectKVCacheStrategy`` projects from the layer itself
-            # so the guard does not strictly apply, but skipping the very
-            # first layer remains questionable).
             can_skip = last_calculated_layer is not None and has_ema_api
             is_skipping = can_skip and _should_skip(i)
             skip_vector.append(int(is_skipping))

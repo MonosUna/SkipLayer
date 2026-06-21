@@ -52,11 +52,6 @@ def build_skip_html(skip_matrix, tokens, full_tokens=None, match_mask=None):
 
 @contextmanager
 def _disable_layer_skipping(model: Any):
-    """Temporarily replace the model's layer skipper with a no-op so the
-    iteration strategy never substitutes any layer with the aligner. This
-    makes the model behave exactly like the underlying pretrained LLM and
-    is used to compute the reference (full-model) next-token prediction.
-    """
     original_skipper = model.model.layer_skipper
     model.model.layer_skipper = BaseLayerSkipper().to(
         device=next(model.parameters()).device,
@@ -69,20 +64,6 @@ def _disable_layer_skipping(model: Any):
 
 
 class SkipMetrics(BaseMetric):
-    """Per-token greedy decoding that compares the skip-model's prediction
-    against the full pretrained model's prediction on the same prefix.
-
-    For each generation step we run two parallel forwards with separate KV
-    caches (skip-model + full-model), record:
-      - whether their argmax tokens match (accuracy bucketed by number of
-        skipped layers at this step);
-      - which layers were skipped at this step;
-      - the probability the skip-model assigns to the full-model's token.
-
-    The full-model's token is appended to the shared prefix so that both
-    models always see identical context (forced-decoding setup).
-    """
-
     def __init__(
         self,
         tokenizer: Any,
@@ -176,13 +157,10 @@ class SkipMetrics(BaseMetric):
                         else:
                             step_input_ids = generated_ids[:, -1:]
 
-                        # Skip model.
                         skip_token, skip_log_probs, skip_tensor = self._greedy_step(
                             model, step_input_ids, attention_mask, skip_pkv
                         )
 
-                        # Full reference model: same architecture, but layer
-                        # skipper temporarily disabled.
                         with _disable_layer_skipping(model):
                             full_token, _, _ = self._greedy_step(
                                 model, step_input_ids, attention_mask, full_pkv
@@ -201,8 +179,6 @@ class SkipMetrics(BaseMetric):
                         total_count += 1
                         total_match += int(match)
 
-                        # Probability the skip-model assigns to the full
-                        # model's prediction (calibration signal).
                         full_token_logprob = float(
                             skip_log_probs.gather(dim=-1, index=full_token).item()
                         )
@@ -216,8 +192,6 @@ class SkipMetrics(BaseMetric):
                         match_mask.append(match)
                         skip_steps.append(skip_tensor.detach().cpu())
 
-                        # Forced decoding: feed the full-model's token to
-                        # both KV caches so prefixes stay aligned.
                         generated_ids = torch.cat([generated_ids, full_token], dim=1)
                         attention_mask = torch.cat(
                             [attention_mask, torch.ones_like(full_token)], dim=1

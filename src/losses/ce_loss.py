@@ -3,13 +3,6 @@ import torch.nn.functional as F
 
 
 class CELoss:
-    """Cross-entropy loss between final logits and shifted labels.
-
-    The aligner participates in this loss when the iteration strategy
-    substitutes one of the decoder layers with it: gradients flow through
-    the rest of the network and into the aligner parameters.
-    """
-
     model_forward_kwargs = {
         "compute_logits": True,
         "use_cache": False,

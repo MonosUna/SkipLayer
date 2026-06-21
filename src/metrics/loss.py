@@ -8,16 +8,12 @@ from tqdm import tqdm
 
 
 class Loss(BaseMetric):
-    """Loss metric computed via the provided loss function."""
-
     def __init__(self, loss_fn: Callable):
         self.loss_fn = loss_fn
 
     def __call__(
         self, model: Any, dataloader: DataLoader, max_batches: int = None
     ) -> dict[str, float]:
-        # Train mode so the layer-skip iteration strategy actually substitutes
-        # a random layer with the aligner (matching the training-time loss).
         model.train()
 
         total_loss = 0.0

@@ -4,7 +4,6 @@ from transformers import AutoConfig
 
 
 def inject_model_config(cfg: DictConfig) -> None:
-    """Inject selected model config fields for OmegaConf interpolation."""
     model_cfg = cfg.llm.model_loading
     config = AutoConfig.from_pretrained(
         model_cfg.pretrained_model_name_or_path,
@@ -50,7 +49,6 @@ def create_model(cfg: DictConfig):
     layer_skipper = hydra.utils.instantiate(cfg.layer_skipper).to(cfg.device, dtype=dtype)
     iteration_strategy = hydra.utils.instantiate(cfg.iterating_strategy)
 
-    # Freeze base LLM parameters: only the aligner is trainable.
     model.freeze_llm_parameters()
     for p in aligner.parameters():
         p.requires_grad = True

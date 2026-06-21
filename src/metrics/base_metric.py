@@ -7,8 +7,6 @@ from torch.utils.data import DataLoader
 
 
 class BaseMetric(ABC):
-    """Base class for metrics computed by running the model on a dataloader."""
-
     @staticmethod
     def autocast_context(model: Any):
         device = next(model.parameters()).device

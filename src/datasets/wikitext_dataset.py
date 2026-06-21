@@ -4,8 +4,6 @@ from .base_dataset import BaseDataset
 
 
 class WikitextDataset(BaseDataset):
-    """Dataset for Salesforce/wikitext language modeling data."""
-
     def __init__(
         self,
         dataset_name: str = "Salesforce/wikitext",

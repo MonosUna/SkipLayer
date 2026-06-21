@@ -5,33 +5,12 @@ from typing import Any
 
 
 class JsonlFileLogger:
-    """Local-disk logger that writes metrics, params and HTML artifacts to
-    a per-run directory. Designed to be used alongside CometML so the same
-    information is also available offline for later analysis.
-
-    Layout (under ``log_dir``):
-
-      - ``metrics.jsonl`` — one JSON record per ``log_metrics`` call:
-        ``{"step": int|null, "ts": float, "metrics": {key: scalar}}``.
-        Only int/float values are kept here.
-      - ``metrics_summary.json`` — last-seen scalar value for every key
-        (overwritten on every ``log_metrics``). Convenient for quick
-        ``cat`` / aggregation across runs.
-      - ``params.json`` — flat dump of the resolved Hydra config.
-      - ``texts.jsonl`` — text-style metric values (e.g. generation logs).
-      - ``html/<key>__step<step>.html`` — every HTML artifact, with
-        ``key`` slashes turned into underscores.
-    """
-
     def __init__(
         self,
         log_dir: str | None = None,
         run_name: str | None = None,
         **kwargs,
     ):
-        # Hydra runs usually `chdir: true` into the run directory, so
-        # the current working directory IS the run directory. We allow
-        # override via ``log_dir`` for completeness.
         self.log_dir = os.path.abspath(log_dir or os.getcwd())
         self.run_name = run_name
         os.makedirs(self.log_dir, exist_ok=True)
@@ -69,7 +48,6 @@ class JsonlFileLogger:
             with open(self._summary_path, "w", encoding="utf-8") as f:
                 json.dump(self._summary, f, ensure_ascii=False, indent=2)
 
-        # Non-scalar values: HTML and free-form text.
         for k, v in metrics.items():
             if "html" in k and v:
                 self.log_html(v, step=step, key=k)
@@ -101,8 +79,6 @@ class JsonlFileLogger:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     def log_model(self, model_path: str, model_name: str) -> None:
-        # Local logger does not duplicate model checkpoints; the
-        # checkpoint file itself already lives in ``checkpoint_dir``.
         return
 
     def log_html(
@@ -115,26 +91,12 @@ class JsonlFileLogger:
             f.write(html)
 
     def finish(self) -> None:
-        # Flush is implicit (we re-open the file each time), but we
-        # rewrite the summary one last time so a clean exit is visible.
         with open(self._summary_path, "w", encoding="utf-8") as f:
             json.dump(self._summary, f, ensure_ascii=False, indent=2)
 
 
 class MultiLogger:
-    """Fan-out logger: forwards every call to a list of underlying loggers.
-
-    Built so the same training loop can simultaneously log to CometML
-    (for online dashboards) and to a local
-    [`JsonlFileLogger`](src/loggers/jsonl_logger.py:1) (for offline
-    aggregation across experiments). Loggers are instantiated by Hydra
-    and passed in as already-constructed objects.
-    """
-
     def __init__(self, loggers: list[Any], **kwargs):
-        # ``**kwargs`` swallows top-level interpolation anchors
-        # (e.g. ``workspace``, ``run_name``) that the YAML keeps just
-        # so nested loggers can read them via ``${logger.workspace}``.
         self.loggers = [lg for lg in loggers if lg is not None]
 
     def log_metrics(self, metrics: dict[str, Any], step: int | None = None) -> None:

@@ -1,7 +1,0 @@
-- layer_skipper.p=0.125
-- layer_skipper.skip_percentile_ranges=[[0.0,1.0]]
-- logger.run_name=exp-baseline-p0125-all-default
-- dataset.generate.limit=50
-- metrics.generate.1.max_new_tokens=64
-- logger=cometml_jsonl
-- logger.workspace=serega-pirat

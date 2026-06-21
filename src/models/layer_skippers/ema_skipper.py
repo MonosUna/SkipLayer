@@ -6,35 +6,6 @@ import torch.nn as nn
 
 
 class EmaSkipper(nn.Module):
-    """Stateful skipper for the EMA-compensation layer-skip method.
-
-    The method (see TODO.md) has the following moving parts, all bundled
-    together in this single module so the iteration strategy stays simple:
-
-    1. **Protected layers** — the first ``protected_first`` and last
-       ``protected_last`` layers are never skipped.
-    2. **Skip candidates** — chosen once after prefill: for each
-       *eligible* layer ``l`` (i.e. not protected) we score
-       ``I_l = ||Δ_l|| / ||h_l||`` from the prefill forward (Δ_l is the
-       per-layer delta ``h_out - h_in``). The ``K`` lowest-scoring
-       layers become the candidate set, where ``K = round(skip_ratio *
-       num_eligible)``. The set is fixed for the rest of the
-       generation.
-    3. **EMA compensation** — for every executed layer ``l`` we maintain
-       a running estimate ``Δ̂_l = β · Δ̂_l + (1 - β) · (h_out - h_in)``.
-       When the iteration strategy decides to skip layer ``l`` it sets
-       ``h_out = h_in + Δ̂_l``.
-    4. **Adaptive skip probability** — a single global ``p_skip`` is
-       maintained. After every generation step we compute the
-       fraction of skipped candidates and average it over the last
-       ``history_window`` steps. If that running average exceeds
-       ``target_ratio`` we decrease ``p_skip`` by ``adaptation_rate``;
-       otherwise we increase it. Clamped to ``[p_min, p_max]``.
-    5. **Periodic refresh** — every ``refresh_interval`` generation
-       steps no skipping is performed at all (full forward through
-       every layer); this keeps EMA estimates from drifting.
-    """
-
     def __init__(
         self,
         num_layers: int,
@@ -69,18 +40,12 @@ class EmaSkipper(nn.Module):
         self.adaptation_rate = adaptation_rate
         self.history_window = max(1, int(history_window))
 
-        # Mutable runtime state (one generation request at a time).
         self.candidates: set[int] = set()
         self.ema: dict[int, torch.Tensor] = {}
         self.p_skip: float = p_init
         self.step_counter: int = 0
         self.skip_history: deque[float] = deque(maxlen=self.history_window)
-        # Last importance scores I_l = ||Δ_l|| / ||h_l|| computed in
-        # ``record_prefill``; kept around so external metrics can read
-        # them without recomputing the prefill forward.
         self.last_importance: dict[int, float] = {}
-
-    # ------------------------------------------------------------------ utils
 
     def is_protected(self, i: int) -> bool:
         return i < self.protected_first or i >= self.num_layers - self.protected_last
@@ -91,11 +56,7 @@ class EmaSkipper(nn.Module):
     def num_candidates(self) -> int:
         return round(self.skip_ratio * self.num_eligible())
 
-    # --------------------------------------------------------------- lifecycle
-
     def reset(self) -> None:
-        """Reset all mutable state. Called at the start of every prefill so
-        each new generation request starts from a clean slate."""
         self.candidates = set()
         self.ema = {}
         self.p_skip = self.p_init
@@ -107,24 +68,11 @@ class EmaSkipper(nn.Module):
         self,
         layer_io: list[tuple[torch.Tensor, torch.Tensor]],
     ) -> None:
-        """Initialize candidates and EMA buffers from a prefill forward.
-
-        ``layer_io[i]`` is ``(h_in_i, h_out_i)`` of the i-th decoder layer
-        as returned during prefill. EMA is initialized to the per-layer
-        delta on the **last** prefill position; importance ``I_l`` is
-        averaged across the prefill sequence to be more robust.
-        """
         importance: dict[int, float] = {}
         for i, (h_in, h_out) in enumerate(layer_io):
             delta = h_out - h_in
-            # Last prefill position drives the EMA initial value (most
-            # relevant for the very next generation step).
             self.ema[i] = delta[..., -1:, :].detach().clone()
 
-            # Per-position L2 norm ratio, then average over batch & seq.
-            # Computed for *all* layers (including protected) so external
-            # metrics can inspect the full delta distribution; only
-            # eligible layers contribute to candidate selection.
             d_norm = delta.float().norm(dim=-1)
             h_norm = h_in.float().norm(dim=-1).clamp_min(1e-6)
             importance[i] = (d_norm / h_norm).mean().item()
@@ -141,14 +89,10 @@ class EmaSkipper(nn.Module):
             sorted_layers = sorted(eligible_importance.items(), key=lambda kv: kv[1])
             self.candidates = {layer for layer, _ in sorted_layers[:k]}
 
-    # --------------------------------------------------------------- skipping
-
     def is_refresh_step(self) -> bool:
         return self.step_counter > 0 and self.step_counter % self.refresh_interval == 0
 
     def should_skip(self, i: int) -> bool:
-        """Per-layer decision called by the iteration strategy on every
-        generation step (single-token forward only)."""
         if self.is_protected(i):
             return False
         if i not in self.candidates:
@@ -158,19 +102,16 @@ class EmaSkipper(nn.Module):
         return torch.rand(1).item() < self.p_skip
 
     def update_ema(self, i: int, h_in: torch.Tensor, h_out: torch.Tensor) -> None:
-        """Update EMA estimate for an executed layer."""
         delta = (h_out - h_in).detach()
         if i not in self.ema:
             self.ema[i] = delta.clone()
         else:
             prev = self.ema[i]
             if prev.shape != delta.shape:
-                # Prefill stored shape (..., 1, H); generation gives the same.
                 prev = prev[..., -delta.shape[-2] :, :]
             self.ema[i] = self.beta * prev + (1.0 - self.beta) * delta
 
     def compensate(self, i: int, h_in: torch.Tensor) -> torch.Tensor:
-        """Return ``h_in + Δ̂_i`` for a skipped layer."""
         delta = self.ema.get(i)
         if delta is None:
             return h_in
@@ -178,12 +119,7 @@ class EmaSkipper(nn.Module):
             delta = delta.expand_as(h_in)
         return h_in + delta.to(dtype=h_in.dtype, device=h_in.device)
 
-    # --------------------------------------------------------------- adaption
-
     def end_step(self, num_skipped: int) -> None:
-        """Called once per generation step after the layer loop. Updates
-        the running skip-ratio average and adapts ``p_skip`` toward
-        ``target_ratio``."""
         denom = max(1, self.num_candidates())
         self.skip_history.append(num_skipped / denom)
         if self.skip_history:
@@ -194,8 +130,6 @@ class EmaSkipper(nn.Module):
                 self.p_skip += self.adaptation_rate
             self.p_skip = float(min(self.p_max, max(self.p_min, self.p_skip)))
         self.step_counter += 1
-
-    # --------------------------------------------------------- nn.Module glue
 
     def forward(self, x: torch.Tensor, i: Optional[int] = None) -> torch.Tensor:
         return x

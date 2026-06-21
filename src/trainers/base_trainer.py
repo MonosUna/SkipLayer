@@ -12,13 +12,6 @@ from tqdm import tqdm
 
 
 class BaseTrainer:
-    """Generic train/eval loop.
-
-    The model is expected to expose a ``custom_forward`` method that
-    consumes a batch dict and returns the same dict augmented with
-    ``logits`` and other model outputs (e.g. ``skip_tensor``).
-    """
-
     TRAIN_METRICS_MAX_BATCHES = 5000
 
     def __init__(
@@ -114,9 +107,6 @@ class BaseTrainer:
             outputs = self.model.custom_forward(batch)
             loss = self._compute_loss(outputs)
 
-        # Defensive: if no trainable parameter participated in this forward
-        # (e.g. all skipped layers landed in a no-op range of the aligner),
-        # the loss has no grad_fn. Skip the optimizer step rather than crash.
         if not loss.requires_grad:
             warnings.warn(
                 "Skipping train step: loss does not require grad "

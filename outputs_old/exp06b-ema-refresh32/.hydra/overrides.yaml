@@ -1,5 +1,0 @@
-- layer_skipper.refresh_interval=32
-- logger.run_name=exp06b-ema-refresh32
-- logger=cometml_jsonl
-- logger.workspace=serega-pirat
-- dataset.generate.limit=50

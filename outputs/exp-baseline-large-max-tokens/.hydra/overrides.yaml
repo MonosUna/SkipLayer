@@ -1,5 +1,0 @@
-- logger.run_name=exp-baseline-large-max-tokens
-- dataset.generate.limit=50
-- metrics.generate.1.max_new_tokens=512
-- logger=cometml_jsonl
-- logger.workspace=serega-pirat

@@ -2,12 +2,6 @@ import torch.nn as nn
 
 
 class MLPAligner(nn.Module):
-    """Single shared MLP applied at every layer index >= start_layer.
-
-    Acts as a learnable substitute for a real decoder layer when the
-    iteration strategy decides to skip the layer.
-    """
-
     def __init__(self, hidden_size: int, hidden_mlp: int | None = None, start_layer: int = 0):
         super().__init__()
         hidden_mlp = hidden_mlp or hidden_size

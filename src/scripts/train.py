@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# Comet: import before torch so auto-logging works (weights, etc.)
 import comet_ml  # noqa: F401
 import hydra
 from omegaconf import DictConfig, OmegaConf

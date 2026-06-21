@@ -4,8 +4,6 @@ from .base_dataset import BaseDataset
 
 
 class AlpacaDataset(BaseDataset):
-    """Dataset for tatsu-lab/alpaca instruction-following data."""
-
     def __init__(
         self,
         dataset_name: str = "tatsu-lab/alpaca",

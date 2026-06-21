@@ -1,4 +1,0 @@
-- logger.run_name=exp01a-baseline-p0.5-half
-- logger=cometml_jsonl
-- logger.workspace=serega-pirat
-- dataset.generate.limit=50

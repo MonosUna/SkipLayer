@@ -4,8 +4,6 @@ from .base_dataset import BaseDataset
 
 
 class TriviaQADataset(BaseDataset):
-    """Dataset for mandarjoshi/trivia_qa (rc config) question-answering data."""
-
     def __init__(
         self,
         dataset_name: str = "mandarjoshi/trivia_qa",

@@ -1,5 +1,0 @@
-- kv_cache_strategy=default
-- logger.run_name=exp09-ema-default-simplekv
-- logger=cometml_jsonl
-- logger.workspace=serega-pirat
-- dataset.generate.limit=50

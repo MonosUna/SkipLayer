@@ -1,4 +1,0 @@
-- logger.run_name=exp03-ema-default
-- logger=cometml_jsonl
-- logger.workspace=serega-pirat
-- dataset.generate.limit=50

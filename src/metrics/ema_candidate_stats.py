@@ -65,35 +65,6 @@ def _build_per_layer_table_html(
 
 
 class EmaCandidateStats(BaseMetric):
-    """Per-layer statistics produced by ``EmaSkipper`` after prefill.
-
-    For every sample in the generation dataloader we run a single
-    prefill forward (no token sampling) so the skipper's
-    ``record_prefill`` is invoked. After the forward we read:
-
-      - ``layer_skipper.candidates`` — set of layers chosen as skip
-        candidates for this sample;
-      - ``layer_skipper.last_importance`` — mapping ``layer_idx ->
-        I_l = avg ||Δ_l|| / ||h_l||`` (computed for *all* layers,
-        including protected ones, so we can inspect the full delta
-        profile of the network).
-
-    Reported metrics:
-
-      - ``candidate_count/L{ii}`` — how many samples picked layer ``ii``
-        as a skip candidate;
-      - ``candidate_share/L{ii}`` — same divided by the number of
-        samples;
-      - ``avg_importance/L{ii}`` — mean importance across samples;
-      - ``html/per_layer_table`` — combined table with columns
-        layer / kind / candidate count / share / average importance
-        (last sample's view).
-
-    The metric needs the chat template applied to the prompt to drive
-    a representative prefill, exactly like
-    [`SkipMetrics`](src/metrics/skip_metrics.py:71).
-    """
-
     def __init__(self, tokenizer: Any, **kwargs):
         self.tokenizer = tokenizer
 
@@ -144,10 +115,6 @@ class EmaCandidateStats(BaseMetric):
                     input_ids, attention_mask = self._get_inputs_for_sample(
                         batch, sample_idx, device
                     )
-                    # Run a single prefill (multi-token) forward. The
-                    # iteration strategy will reset the skipper and call
-                    # ``record_prefill`` so the candidate set and
-                    # importance scores are populated.
                     model.custom_forward(
                         {
                             "input_ids": input_ids,
@@ -183,7 +150,6 @@ class EmaCandidateStats(BaseMetric):
                 )
 
         result["count/samples"] = float(samples_seen)
-        # Overall protected/eligible aggregates for quick sanity checks.
         eligible_picks = sum(
             candidate_counts[i]
             for i in range(num_layers)
@@ -203,7 +169,6 @@ class EmaCandidateStats(BaseMetric):
             samples_seen,
         )
 
-        # Reset state so subsequent metrics start clean.
         if hasattr(skipper, "reset"):
             skipper.reset()
         return result

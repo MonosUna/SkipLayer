@@ -1,17 +1,4 @@
 #!/usr/bin/env python3
-"""Aggregate `metrics_summary.json` produced by
-[`JsonlFileLogger`](src/loggers/jsonl_logger.py:1) across all runs in
-`outputs/` and print one comparison table.
-
-Usage:
-    python scripts/aggregate_results.py [outputs_dir]
-        [--csv path/to/results.csv]
-        [--keys key1,key2,...]
-
-If ``--keys`` is omitted, prints a curated set of high-signal metrics:
-generate split's match-vs-full-model accuracy at various skip counts,
-candidate-share aggregates and skip-percent stats.
-"""
 import argparse
 import csv
 import json
@@ -57,11 +44,9 @@ def collect_runs(outputs_dir: Path) -> dict[str, dict]:
 def select_keys(runs: dict[str, dict], explicit_keys: list[str] | None) -> list[str]:
     if explicit_keys:
         return explicit_keys
-    # Auto-pick: any DEFAULT_KEYS that appear in at least one run.
     keys = [k for k in DEFAULT_KEYS if any(k in s for s in runs.values())]
     if keys:
         return keys
-    # Fallback: union of all numeric keys across runs.
     seen = set()
     for s in runs.values():
         for k, v in s.items():

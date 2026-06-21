@@ -3,11 +3,6 @@ import torch.nn as nn
 
 
 class UniformLayerSkipper(nn.Module):
-    """Skip layer with probability ``p`` if the layer index lies inside one
-    of the configured percentile ranges (e.g. ``[(0.5, 1.0)]`` skips only the
-    second half of the network).
-    """
-
     def __init__(self, num_layers: int, p: float = 0.5, skip_percentile_ranges=None):
         super().__init__()
         self.num_layers = num_layers

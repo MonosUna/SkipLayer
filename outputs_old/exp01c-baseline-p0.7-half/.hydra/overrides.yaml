@@ -1,5 +1,0 @@
-- layer_skipper.p=0.7
-- logger.run_name=exp01c-baseline-p0.7-half
-- logger=cometml_jsonl
-- logger.workspace=serega-pirat
-- dataset.generate.limit=50

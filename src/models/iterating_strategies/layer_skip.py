@@ -4,20 +4,6 @@ from src.models.llms.common import get_layer_attention_mask
 
 
 class LayerSkipIterationStrategy:
-    """Iterate decoder layers and optionally substitute one (training) or
-    several (inference) of them with the learnable aligner.
-
-    Training: a single random layer is replaced by the aligner. The output
-    of the aligner becomes the input of the following decoder layers, so
-    gradients flow through the aligner via the rest of the network and the
-    final cross-entropy loss.
-
-    Inference (single-token decoding only): the layer skipper decides per
-    layer whether to substitute that layer with the aligner. KV cache for
-    skipped layers is filled by the configured KV cache strategy so that
-    subsequent attention layers can still attend to past tokens.
-    """
-
     def __init__(self, kv_cache_strategy):
         self.kv_cache_strategy = kv_cache_strategy
 
@@ -40,14 +26,6 @@ class LayerSkipIterationStrategy:
         last_calculated_layer = None
         skip_vector: list[int] = []
 
-        # Determine, in advance, which layers will be skipped. During training
-        # we must guarantee that at least one layer with a trainable aligner is
-        # skipped, otherwise the loss would not require grad (the base LLM is
-        # frozen, and the aligner is a no-op for layer indices below
-        # ``start_layer``). Without this safeguard ``loss.backward()`` raises
-        # "element 0 of tensors does not require grad and does not have a
-        # grad_fn" whenever the random sampler picks no skip in the trainable
-        # range.
         if llm.training:
             decisions: list[bool] = [
                 bool(llm.layer_skipper.should_skip(hidden_states, i))

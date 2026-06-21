@@ -2,12 +2,6 @@ import torch.nn as nn
 
 
 class PerLayerMLPAligner(nn.Module):
-    """Per-layer MLP aligner: a separate MLP for each decoder layer.
-
-    For layer indices below ``start_layer`` the input is returned unchanged
-    (no aligner is created for those layers).
-    """
-
     def __init__(
         self,
         hidden_size: int,
